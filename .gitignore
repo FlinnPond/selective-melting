@@ -1,0 +1,11 @@
+*.o
+*.out
+main
+main.cpp
+*.cpp
+*.hpp
+vaporize.cu
+test.cu
+data/
+plots/
+.vscode/
