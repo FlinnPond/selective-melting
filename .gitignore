@@ -1,9 +1,9 @@
 *.o
 *.out
 main
-main.cpp
 *.cpp
 *.hpp
+main1.cu
 vaporize.cu
 test.cu
 data/

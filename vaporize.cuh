@@ -33,7 +33,6 @@ struct constants{
 enum ST {
     FLUID,
     GAS,
-    INTERFACE,
     SOLID,
     WALL,
 };
@@ -43,7 +42,7 @@ struct Data {
     double h, hz, tau;
     double tim, time_stop;
     int step, drop_rate;
-    double beam_vel, deltaX; // m\s
+    double beam_radius, beam_vel, beam_start, beam_power, deltaX; // m\s
     
     double substrate_length, substrate_width, substrate_depth;
     double calc_length, calc_width, calc_depth;
@@ -63,9 +62,12 @@ struct Data {
     
     double *al_d, *ti_d, *al_next_d, *ti_next_d;
     double *al_h, *ti_h, *al_next_h, *ti_next_h;
+    double *heat_source_h, *heat_source_d;
 
     double *heat_h, *heat_next_h;
     double *heat_d, *heat_next_d;
+
+    double *D_h, *D_d;
 
     double lambda_al_0_s, lambda_al_s;
     double lambda_al_0_l, lambda_al_l;
@@ -195,6 +197,9 @@ __host__ void Data::init(double _temp, int _drop_rate){
     time_stop = 1e-5;
     drop_rate = (_drop_rate==-1) ? (int)(time_stop/tau) : _drop_rate;  // drop once at the end
     beam_vel = 1; // m\s
+    beam_power = 300;
+    beam_start = 20;
+    beam_radius = 5e-6;
     deltaX = 0;
     
     substrate_length = 1e-5;
@@ -226,6 +231,8 @@ __host__ void Data::init(double _temp, int _drop_rate){
     heat_h = (double*)(malloc(Nx*Nz*sizeof(double)));
     heat_next_h = (double*)(malloc(Nx*Nz*sizeof(double)));
     state_field_h = (ST*)(malloc(Nx*Nz*sizeof(ST)));
+    D_h = (double*)(malloc(Nx*Nz*sizeof(double)));
+    heat_source_h = (double*)(malloc(Nx*sizeof(double)));
     cts_Al_h = (constants*)(malloc(sizeof(constants)));
     cts_Ti_h = (constants*)(malloc(sizeof(constants)));
     std::cout << "Initializing constants on host\n";
@@ -267,13 +274,13 @@ __host__ void Data::init(double _temp, int _drop_rate){
             ti_h[x*Nz+z] = ti_0;
             al_next_h[x*Nz+z] = al_0;
             ti_next_h[x*Nz+z] = ti_0;
-            state_field_h[x*Nz+z] = FLUID;
+            state_field_h[x*Nz+z] = SOLID;
             if (x==Nx-1) {state_field_h[x*Nz+z] = WALL;}
             if (x==0)    {state_field_h[x*Nz+z] = WALL;}
             // std::cout << x << " of " << Nx << ", " << z << " of " << Nz << std::endl;
         }
         state_field_h[x*Nz+0] = WALL;
-        if (x>=Nx - 50 && state_field_h[x*Nz+1] != WALL) {state_field_h[x*Nz+1] = INTERFACE;}
+        //if (x>=Nx - 50 && state_field_h[x*Nz+1] != WALL) {state_field_h[x*Nz+1] = INTERFACE;}
         state_field_h[x*Nz+Nz-1] = WALL;
     }
 
@@ -284,7 +291,9 @@ __host__ void Data::init(double _temp, int _drop_rate){
     cudaMalloc((void**)&ti_next_d, Nx*Nz*sizeof(double));  cudaMemcpy(ti_next_d, ti_next_h, Nx*Nz*sizeof(double), cudaMemcpyHostToDevice);
     cudaMalloc((void**)&heat_d, Nx*Nz*sizeof(double));     cudaMemcpy(heat_d, heat_h, Nx*Nz*sizeof(double), cudaMemcpyHostToDevice);
     cudaMalloc((void**)&heat_next_d, Nx*Nz*sizeof(double));cudaMemcpy(heat_next_d, heat_next_h, Nx*Nz*sizeof(double), cudaMemcpyHostToDevice);
+    cudaMalloc((void**)&D_d, Nx*Nz*sizeof(double));        cudaMemcpy(D_d, D_h, Nx*Nz*sizeof(double), cudaMemcpyHostToDevice);
     cudaMalloc((void**)&state_field_d, Nx*Nz*sizeof(ST));  cudaMemcpy(state_field_d, state_field_h, Nx*Nz*sizeof(ST), cudaMemcpyHostToDevice);
+    cudaMalloc((void**)&heat_source_d, Nx*sizeof(double)); cudaMemcpy(heat_source_d, heat_source_h, Nx*sizeof(double), cudaMemcpyHostToDevice);
     //std::cout << "memset " << cts_Al_h->MOL_MASS << ": " << cudaGetErrorString(cudaGetLastError()) << "\n";
 }
 
@@ -295,8 +304,8 @@ __host__ void Data::extract(){
 }
 
 __host__ void Data::clean(){
-        free(al_h);     free(ti_h);     free(al_next_h);     free(ti_next_h);     free(heat_h);     free(heat_next_h);     free(state_field_h);
-    cudaFree(al_d); cudaFree(ti_d); cudaFree(al_next_d); cudaFree(ti_next_d); cudaFree(heat_d); cudaFree(heat_next_d); cudaFree(state_field_d);
+        free(al_h);     free(ti_h);     free(al_next_h);     free(ti_next_h);     free(heat_h);     free(heat_next_h);     free(state_field_h);     free(heat_source_h);
+    cudaFree(al_d); cudaFree(ti_d); cudaFree(al_next_d); cudaFree(ti_next_d); cudaFree(heat_d); cudaFree(heat_next_d); cudaFree(state_field_d); cudaFree(heat_source_d);
 }
 
 __device__ double _f1(double mach, constants* cts){
