@@ -16,38 +16,35 @@ __global__ void CalcDiffusion(double* al, double* ti, double* al_next, double* t
     int z = blockIdx.y*blockDim.y + threadIdx.y;
     int center = x*dat.Nz+z;
     if (x < dat.Nx && z < dat.Nz) {
-        if (state_field[center] == FLUID || state_field[center] == INTERFACE) {
+        if (state_field[center] == FLUID) {
             int left  = (x-1)*dat.Nz+z;
             int right = (x+1)*dat.Nz+z;
             int top    = x*dat.Nz+z-1;
             int bottom = x*dat.Nz+z+1;
-            if (state_field[center] == INTERFACE) {
-                double al_mass_loss, ti_mass_loss;
-                double leftal, leftti, rightal, rightti;
-                double topal, topti, bottomal, bottomti;
-                if (state_field[center] == INTERFACE) {
-                    double al_dole = al[center] / (al[center] + ti[center]);
-                    al_mass_loss = Max(0.0,      al_dole  * activity_Al(dat.temp, al_dole, dat.cts_Al_d) * mass_loss(dat.temp, dat.cts_Al_d) * dat.tau);
-                    ti_mass_loss = Max(0.0, (1 - al_dole) * activity_Ti(dat.temp, al_dole, dat.cts_Ti_d) * mass_loss(dat.temp, dat.cts_Ti_d) * dat.tau);
-                    //printf("loss: %e, param1: %e, param1: %e, temp: %e\n", mass_loss(dat.temp, dat.cts_Al_d), dat.cts_Al_d->MOL_MASS, dat.cts_Al_d->R, dat.temp);
-                }
-                else {
-                    al_mass_loss = 0.0;
-                    ti_mass_loss = 0.0;
-                }
-                if (state_field[left]   == WALL) {leftal   = al[center];leftti   = ti[center];} else {leftal   = al[left];  leftti   = ti[left];}
-                if (state_field[right]  == WALL) {rightal  = al[center];rightti  = ti[center];} else {rightal  = al[right]; rightti  = ti[right];}
-                if (state_field[top]    == WALL) {topal    = al[center];topti    = ti[center];} else {topal    = al[top];   topti    = ti[top];}
-                if (state_field[bottom] == WALL) {bottomal = al[center];bottomti = ti[center];} else {bottomal = al[bottom];bottomti = ti[bottom];}
-    
-                al_next[center] = Max(0.0, al[center] + dat.tau * dat.D * ((rightal - 2*al[center] + leftal) / (dat.h*dat.h) + (bottomal - 2*al[center] + topal)/(dat.hz*dat.hz)) - al_mass_loss / 0.027 / dat.hz);
-                ti_next[center] = Max(0.0, ti[center] + dat.tau * dat.D * ((rightti - 2*ti[center] + leftti) / (dat.h*dat.h) + (bottomti - 2*ti[center] + topti)/(dat.hz*dat.hz)) - ti_mass_loss / 0.048 / dat.hz);
+            double al_mass_loss, ti_mass_loss;
+            double leftal, leftti, rightal, rightti;
+            double topal, topti, bottomal, bottomti;
+            double al_dole = al[center] / (al[center] + ti[center]);
+            al_mass_loss = 0;
+            ti_mass_loss = 0;
+
+            if (state_field[top] == GAS) {
+                al_mass_loss = Max(0.0,      al_dole  * activity_Al(dat.temp, al_dole, dat.cts_Al_d) * mass_loss(dat.temp, dat.cts_Al_d) * dat.tau);
+                ti_mass_loss = Max(0.0, (1 - al_dole) * activity_Ti(dat.temp, al_dole, dat.cts_Ti_d) * mass_loss(dat.temp, dat.cts_Ti_d) * dat.tau);
+                //printf("loss: %e, param1: %e, param1: %e, temp: %e\n", mass_loss(dat.temp, dat.cts_Al_d), dat.cts_Al_d->MOL_MASS, dat.cts_Al_d->R, dat.temp);
             }
+            if (state_field[left]   == WALL) {leftal   = al[center];leftti   = ti[center];} else {leftal   = al[left];  leftti   = ti[left];}
+            if (state_field[right]  == WALL) {rightal  = al[center];rightti  = ti[center];} else {rightal  = al[right]; rightti  = ti[right];}
+            if (state_field[top]    == WALL) {topal    = al[center];topti    = ti[center];} else {topal    = al[top];   topti    = ti[top];}
+            if (state_field[bottom] == WALL) {bottomal = al[center];bottomti = ti[center];} else {bottomal = al[bottom];bottomti = ti[bottom];}
+
+            al_next[center] = Max(0.0, al[center] + dat.tau * dat.D * ((rightal - 2*al[center] + leftal) / (dat.h*dat.h) + (bottomal - 2*al[center] + topal)/(dat.hz*dat.hz)) - al_mass_loss / 0.027 / dat.hz);
+            ti_next[center] = Max(0.0, ti[center] + dat.tau * dat.D * ((rightti - 2*ti[center] + leftti) / (dat.h*dat.h) + (bottomti - 2*ti[center] + topti)/(dat.hz*dat.hz)) - ti_mass_loss / 0.048 / dat.hz);
         }
     }
 }
 
-__global__ void CalcHeatConduct(double *heat, double *heat_next, double* al, double* ti, ST* state_field) {
+__global__ void CalcHeatConduct(double *heat, double *heat_next, double *heat_source, double* al, double* ti, ST* state_field) {
     int x = blockIdx.x*blockDim.x + threadIdx.x;
     int z = blockIdx.y*blockDim.y + threadIdx.y;
     int index = x * dat.Nz + z;
@@ -90,8 +87,7 @@ __global__ void CalcHeatConduct(double *heat, double *heat_next, double* al, dou
             heat_next[index] = heat[index] + dat.tau * (
                 (rightD)*(heat[right] - heat[index]) - (leftD)  *(heat[index] - heat[left])  /(dat.h *dat.h ) +
                 (topD)  *(heat[top]   - heat[index]) - (bottomD)*(heat[index] - heat[bottom])/(dat.hz*dat.hz) + energy_source
-            )
-            
+            );
         }
     }
 }
@@ -100,7 +96,7 @@ __global__ void UpdateState(ST* state_field, double* heat) {
     int x = blockIdx.x*blockDim.x + threadIdx.x;
     int z = blockIdx.y*blockDim.y + threadIdx.y;
     int center = x*dat.Nz+z;
-    if(x<dat.Nx && y<dat.Nz) {
+    if(x<dat.Nx && z<dat.Nz) {
         if(state_field[center] == FLUID && heat[center] <  dat.cts_Ti_d->TEMP_LIQ) {state_field[center] = SOLID;}
         if(state_field[center] == SOLID && heat[center] >= dat.cts_Ti_d->TEMP_LIQ) {state_field[center] = FLUID;}
     }
@@ -162,15 +158,15 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
         {
             dat_host.step++;
             std::cout << "temp " << temp << ", step " << dat_host.step << ": time = " << dat_host.tim << "; " << (dat_host.tim) / time_stop * 100 << "%" << std::endl;
-            CalcDiffusion<<<gridShape, blockShape>>>(dat_host.al_d, dat_host.ti_d, dat_host.al_next_d, dat_host.ti_next_d, dat_host.state_field_d);
-            std::swap(dat_host.al_next_d, dat_host.al_d);
-            std::swap(dat_host.ti_next_d, dat_host.ti_d);
-            cudaDeviceSynchronize();
+            // CalcDiffusion<<<gridShape, blockShape>>>(dat_host.al_d, dat_host.ti_d, dat_host.al_next_d, dat_host.ti_next_d, dat_host.state_field_d);
+            // std::swap(dat_host.al_next_d, dat_host.al_d);
+            // std::swap(dat_host.ti_next_d, dat_host.ti_d);
+            // cudaDeviceSynchronize();
             CalcHeatSource<<<blocksPerGridX, threadsPerBlock>>>(dat_host.heat_source_d, dat_host.step);
-            std::swap(dat_host.heat_next_d, dat_host.heat_d);
-            cudaDeviceSynchronize();
-            CalcHeatConduct<<<gridShape, blockShape>>>(dat_host.heat_d, dat_host.heat_next_d, dat_host.al_d, dat_host.ti_d, dat_host.state_field_d);
-            cudaDeviceSynchronize();
+            // std::swap(dat_host.heat_next_d, dat_host.heat_d);
+            // cudaDeviceSynchronize();
+            // CalcHeatConduct<<<gridShape, blockShape>>>(dat_host.heat_d, dat_host.heat_next_d, dat_host.heat_source_d, dat_host.al_d, dat_host.ti_d, dat_host.state_field_d);
+            // cudaDeviceSynchronize();
             
             if (dat_host.step % dat_host.drop_rate == 0) {
                 dat_host.extract();
@@ -210,4 +206,4 @@ int main()
     sim_temp(3000.0, 3001.0, 200.0, 1e-4, 1000, "plots/cmap_anim11_45");
 
     return 0;
-// }
+}

@@ -279,7 +279,7 @@ __host__ void Data::init(double _temp, int _drop_rate){
             if (x==0)    {state_field_h[x*Nz+z] = WALL;}
             // std::cout << x << " of " << Nx << ", " << z << " of " << Nz << std::endl;
         }
-        state_field_h[x*Nz+0] = WALL;
+        state_field_h[x*Nz+0] = GAS;
         //if (x>=Nx - 50 && state_field_h[x*Nz+1] != WALL) {state_field_h[x*Nz+1] = INTERFACE;}
         state_field_h[x*Nz+Nz-1] = WALL;
     }
