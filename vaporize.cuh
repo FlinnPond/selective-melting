@@ -191,10 +191,10 @@ __device__ inline double Min(double A, double B){if(A<B) {return A;} else {retur
 
 __host__ void Data::init(double _temp, int _drop_rate){
     temp=_temp;
-    h = 1e-7;
-    hz = 1e-8;
-    tau = 1e-8;
-    time_stop = 1e-5;
+    h = 1e-6;
+    hz = 1e-6;
+    tau = 1e-9;
+    time_stop = 1e-6;
     drop_rate = (_drop_rate==-1) ? (int)(time_stop/tau) : _drop_rate;  // drop once at the end
     beam_vel = 1; // m\s
     beam_power = 300;
@@ -303,7 +303,7 @@ __host__ void Data::extract(){
     cudaMemcpy(al_h, al_d, Nx*Nz*sizeof(double), cudaMemcpyDeviceToHost);
     cudaMemcpy(ti_h, ti_d, Nx*Nz*sizeof(double), cudaMemcpyDeviceToHost);
     cudaMemcpy(heat_h, heat_d, Nx*Nz*sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(heat_source_h, heat_source_d, Nx*Nz*sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(heat_source_h, heat_source_d, Nx*sizeof(double), cudaMemcpyDeviceToHost);
 }
 
 __host__ void Data::clean(){
