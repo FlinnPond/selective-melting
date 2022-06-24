@@ -277,6 +277,8 @@ __host__ void Data::init(double _temp, int _drop_rate){
             state_field_h[x*Nz+z] = SOLID;
             if (x==Nx-1) {state_field_h[x*Nz+z] = WALL;}
             if (x==0)    {state_field_h[x*Nz+z] = WALL;}
+            heat_h[x*Nz+z] = 300;
+            heat_next_h[x*Nz+z] = 300;
             // std::cout << x << " of " << Nx << ", " << z << " of " << Nz << std::endl;
         }
         state_field_h[x*Nz+0] = GAS;
@@ -301,11 +303,14 @@ __host__ void Data::extract(){
     cudaMemcpy(al_h, al_d, Nx*Nz*sizeof(double), cudaMemcpyDeviceToHost);
     cudaMemcpy(ti_h, ti_d, Nx*Nz*sizeof(double), cudaMemcpyDeviceToHost);
     cudaMemcpy(heat_h, heat_d, Nx*Nz*sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(heat_source_h, heat_source_d, Nx*Nz*sizeof(double), cudaMemcpyDeviceToHost);
 }
 
 __host__ void Data::clean(){
-        free(al_h);     free(ti_h);     free(al_next_h);     free(ti_next_h);     free(heat_h);     free(heat_next_h);     free(state_field_h);     free(heat_source_h);
-    cudaFree(al_d); cudaFree(ti_d); cudaFree(al_next_d); cudaFree(ti_next_d); cudaFree(heat_d); cudaFree(heat_next_d); cudaFree(state_field_d); cudaFree(heat_source_d);
+        free(al_h);     free(ti_h);     free(al_next_h);     free(ti_next_h); 
+    cudaFree(al_d); cudaFree(ti_d); cudaFree(al_next_d); cudaFree(ti_next_d); 
+        free(heat_h);     free(heat_next_h);     free(state_field_h);     free(heat_source_h);
+    cudaFree(heat_d); cudaFree(heat_next_d); cudaFree(state_field_d); cudaFree(heat_source_d);
 }
 
 __device__ double _f1(double mach, constants* cts){

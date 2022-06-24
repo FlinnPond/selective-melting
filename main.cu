@@ -106,7 +106,9 @@ __global__ void CalcHeatSource(double *heat_source, int step) {
     int x = blockIdx.x*blockDim.x + threadIdx.x;
     if (x < dat.Nx) {
         double current_time = step * dat.tau;
-        heat_source[x] = 2 * dat.beam_power / (M_PI * dat.beam_radius * dat.beam_radius) * exp(-2 * pow(current_time * dat.beam_vel + dat.beam_start * dat.h - x * dat.h, 2) / pow(dat.beam_radius, 2));
+        double current_beam_pos = current_time * dat.beam_vel + dat.beam_start * dat.h;
+        // heat_source[x] = 2 * dat.beam_power / (M_PI * dat.beam_radius * dat.beam_radius) * exp(-2 * pow(current_time * dat.beam_vel + dat.beam_start * dat.h - x * dat.h, 2) / pow(dat.beam_radius, 2));
+        heat_source[x] = 1 / (dat.beam_radius * sqrt(2*M_PI)) * exp(-pow(x*dat.h - current_beam_pos, 2) / (2*pow(dat.beam_radius, 2)));
     }
 }
 
@@ -143,16 +145,20 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
         CalcHeatSource<<<blocksPerGridX, threadsPerBlock>>>(dat_host.heat_source_d, dat_host.step);
         // cudaMemcpy(dat_host.heat_source_h, dat_host.heat_source_d, dat_host.Nx*sizeof(double), cudaMemcpyDeviceToHost);
         cudaDeviceSynchronize();    
-        Gnuplot gp;
+        dat_host.extract();
+
+        //Gnuplot gp;
         std::vector<std::pair<double, double>> data;
         for (int x = 0; x < dat_host.Nx; x++) {
             double xPos = x * dat_host.h;
-            double yTemp = dat_host.heat_source_h[x];
+            double current_beam_pos = dat_host.beam_start * dat_host.h;
+            // double yTemp = dat_host.heat_source_h[x];
+            double yTemp = 1 / (dat_host.beam_radius * sqrt(2*M_PI)) * exp(-pow(x*dat_host.h - current_beam_pos, 2) / (2*pow(dat_host.beam_radius, 2)));
             data.push_back(std::make_pair(xPos, yTemp));
+            std::cout << yTemp << "\n";
         }
-        
-        gp << "plot '-' u 1:2 w l\n";
-        gp.send1d(data);
+        //gp << "plot '-' u 1:2 w l\n";
+        //gp.send1d(data);
 
         while (dat_host.tim < time_stop)
         {
@@ -163,16 +169,16 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
             // std::swap(dat_host.ti_next_d, dat_host.ti_d);
             // cudaDeviceSynchronize();
             CalcHeatSource<<<blocksPerGridX, threadsPerBlock>>>(dat_host.heat_source_d, dat_host.step);
-            // std::swap(dat_host.heat_next_d, dat_host.heat_d);
-            // cudaDeviceSynchronize();
-            // CalcHeatConduct<<<gridShape, blockShape>>>(dat_host.heat_d, dat_host.heat_next_d, dat_host.heat_source_d, dat_host.al_d, dat_host.ti_d, dat_host.state_field_d);
-            // cudaDeviceSynchronize();
+            cudaDeviceSynchronize();
+            CalcHeatConduct<<<gridShape, blockShape>>>(dat_host.heat_d, dat_host.heat_next_d, dat_host.heat_source_d, dat_host.al_d, dat_host.ti_d, dat_host.state_field_d);
+            std::swap(dat_host.heat_next_d, dat_host.heat_d);
+            cudaDeviceSynchronize();
             
             if (dat_host.step % dat_host.drop_rate == 0) {
                 dat_host.extract();
                 Gnuplot gp;
-                gp << "set terminal png size 1600,900; \nset view map; \nset pm3d at b corners2color c4; \nset palette model RGB rgbformulae 15,5,7; set palette negative; \nset samples 100; \nset isosamples 100; \nset xyplane relative 0; "; // set palette defined (0.0 \"white\", 1.0 \"black\")\n";
-                gp << "set cbrange [0:1]; set xrange [0:" << dat_host.Nx * dat_host.h << "]; set yrange [" << 3*dat_host.Nz*dat_host.hz/2 << ":" << -dat_host.Nz*dat_host.hz/2  <<"]\n";
+                gp << "set terminal png size 1600,900; \nset view map; \nset pm3d at b corners2color c4; \nset palette model RGB rgbformulae 15,5,7; \nset samples 100; \nset isosamples 100; \nset xyplane relative 0; "; // set palette defined (0.0 \"white\", 1.0 \"black\")\n";
+                gp << "set cbrange [0:3000]; set xrange [0:" << dat_host.Nx * dat_host.h << "]; set yrange [" << 3*dat_host.Nz*dat_host.hz/2 << ":" << -dat_host.Nz*dat_host.hz/2  <<"]\n";
                 output.open("data/dataT.txt");
                 std::cout << "set output \"" << drop_dir << "/cmap" << (int)dat_host.temp << "_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n";
                 gp        << "set output \"" << drop_dir << "/cmap" << temp << "_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"; ";
@@ -184,11 +190,13 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
                     {
                         output << x*dat_host.h << " " << z*dat_host.hz << " " << dat_host.al_h[x*dat_host.Nz+z]/dat_host.al_0 << " " << dat_host.ti_h[x*dat_host.Nz+z]/dat_host.ti_0 << " " << dat_host.state_field_h[x*dat_host.Nz+z]/3.0 << "\n";
                     }
+                    // output << x*dat_host.h << " " << dat_host.heat_source[x];
                     output << "\n";
                 }
                 std::cout << "plotting\n";
                 output.close();
                 gp << "splot \"data/dataT.txt\" u 1:2:3 with pm3d\n";
+                // gp << "plot \"data/dataT.txt\" u 1:2 with line\n"
                 std::cout << "Done\n";
             }
             dat_host.tim += dat_host.tau;
