@@ -144,8 +144,8 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
 
         cudaMemcpyToSymbol(dat, &dat_host, sizeof(Data));
         std::cout << "copy data: " << cudaGetErrorString(cudaGetLastError()) << "\n";
-        //std::cout << dat_host.temp << std::endl;
 
+        // draw beam power spread
         CalcHeatSource<<<blocksPerGridX, threadsPerBlock>>>(dat_host.heat_source_d, dat_host.step);
         cudaMemcpy(dat_host.heat_source_h, dat_host.heat_source_d, dat_host.Nx*sizeof(double), cudaMemcpyDeviceToHost);
         cudaDeviceSynchronize();    
@@ -177,16 +177,18 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
             // std::swap(dat_host.al_next_d, dat_host.al_d);
             // std::swap(dat_host.ti_next_d, dat_host.ti_d);
             // cudaDeviceSynchronize();
+            cudaDeviceSynchronize();
             CalcHeatSource<<<blocksPerGridX, threadsPerBlock>>>(dat_host.heat_source_d, dat_host.step);
             cudaDeviceSynchronize();
             CalcHeatConduct<<<gridShape, blockShape>>>(dat_host.heat_d, dat_host.heat_next_d, dat_host.heat_source_d, dat_host.al_d, dat_host.ti_d, dat_host.state_field_d);
             std::swap(dat_host.heat_next_d, dat_host.heat_d);
-            cudaDeviceSynchronize();
             
             if (dat_host.step % dat_host.drop_rate == 0) {
+                cudaDeviceSynchronize();
                 dat_host.extract();
                 std::ofstream output;
                 output.open("data/dataT.txt");
+
                 cudaDeviceSynchronize();
                 for (int x = 0; x < dat_host.Nx; x++)
                 {
@@ -194,15 +196,21 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
                     {
                         output << x*dat_host.h << " " << z*dat_host.hz << " " << dat_host.heat_h[x*dat_host.Nz+z] << " " << dat_host.al_h[x*dat_host.Nz+z]/dat_host.al_0 << " " << dat_host.ti_h[x*dat_host.Nz+z]/dat_host.ti_0 << " " << dat_host.state_field_h[x*dat_host.Nz+z]/3.0 << "\n";
                     }
-                    // output << x*dat_host.h << " " << dat_host.heat_source[x];
                     output << "\n";
                 }
                 output.close();
+
+                float highest_temp = 6000;
+                float melt_temp = dat_host.cts_Ti_h->TEMP_MELT;
+                float melt_frac = melt_temp / highest_temp;
+
                 Gnuplot gp;
                 gp << "load \"scriptT.gp\" \n";
                 std::cout << "set output \"" << drop_dir << "/Tmap_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n";
                 gp        << "set output \"" << drop_dir << "/Tmap_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n";
                 gp << "set xrange [0:" << dat_host.Nx * dat_host.h << "]; set yrange [" << 3*dat_host.Nz*dat_host.hz/2 << ":" << -dat_host.Nz*dat_host.hz/2  <<"]\n";
+                gp << "set palette defined (0 \"black\"," << melt_frac/2 << "\"blue\", " << melt_frac << "\"red\", " << melt_frac << "\"web-green\", " << (1+melt_frac)/2 << "\"yellow\", 1 \"grey90\") \n";
+                gp << "set cbrange [0:" << highest_temp << "] \n";
                 gp << "set title \"Al-Ti melt pool heat map at t = " << std::setprecision(3) << dat_host.tim << "\"; ";
                 gp << "splot \"data/dataT.txt\" u 1:2:3 with pm3d\n";
 

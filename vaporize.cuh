@@ -226,7 +226,7 @@ __host__ void Data::init(double _temp, int _drop_rate){
     lambda_ti_0_s = -0.3;  lambda_ti_s = 14.6;
     lambda_ti_0_l = -6.7;  lambda_ti_l = 18.3;
 
-    std::cout << "allocating data maps and constants on host...\n"; 
+    std::cout << "Allocating data maps and constants on host...\n"; 
     al_h = (double*)(malloc(Nx*Nz*sizeof(double)));
     ti_h = (double*)(malloc(Nx*Nz*sizeof(double)));
     al_next_h = (double*)(malloc(Nx*Nz*sizeof(double)));
@@ -288,9 +288,9 @@ __host__ void Data::init(double _temp, int _drop_rate){
         //if (x>=Nx - 50 && state_field_h[x*Nz+1] != WALL) {state_field_h[x*Nz+1] = INTERFACE;}
         state_field_h[x*Nz+Nz-1] = WALL;
     }
-
+    std::cout << "### al_0 = " << al_0 << std::endl;
     std::cout << "Defining data maps and constants on device\n";
-    cudaMalloc((void**)&al_d, Nx*Nz*sizeof(double));       cudaMemcpy(al_d, al_h, Nx*Nz*sizeof(double), cudaMemcpyHostToDevice); std::cout << "### al_0 = " << al_0 << std::endl;
+    cudaMalloc((void**)&al_d, Nx*Nz*sizeof(double));       cudaMemcpy(al_d, al_h, Nx*Nz*sizeof(double), cudaMemcpyHostToDevice);
     cudaMalloc((void**)&ti_d, Nx*Nz*sizeof(double));       cudaMemcpy(ti_d, ti_h, Nx*Nz*sizeof(double), cudaMemcpyHostToDevice);
     cudaMalloc((void**)&al_next_d, Nx*Nz*sizeof(double));  cudaMemcpy(al_next_d, al_next_h, Nx*Nz*sizeof(double), cudaMemcpyHostToDevice);
     cudaMalloc((void**)&ti_next_d, Nx*Nz*sizeof(double));  cudaMemcpy(ti_next_d, ti_next_h, Nx*Nz*sizeof(double), cudaMemcpyHostToDevice);
