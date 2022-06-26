@@ -197,22 +197,22 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
                     // output << x*dat_host.h << " " << dat_host.heat_source[x];
                     output << "\n";
                 }
-                Gnuplot gp;
-                gp << "set terminal png size 1600,900; \nset view map; \nset pm3d at b corners2color c4; \nset palette model RGB; set palette defined; \nset samples 100; \nset isosamples 100; \nset xyplane relative 0; "; // set palette defined (0.0 \"white\", 1.0 \"black\")\n";
-                gp << "set cbrange [0:6000]; set xrange [0:" << dat_host.Nx * dat_host.h << "]; set yrange [" << 3*dat_host.Nz*dat_host.hz/2 << ":" << -dat_host.Nz*dat_host.hz/2  <<"]\n";
-                std::cout << "set output \"" << drop_dir << "/Tmap" << (int)dat_host.temp << "_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n";
-                gp        << "set output \"" << drop_dir << "/Tmap" << temp << "_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"; ";
-                gp << "set title \"Al-Ti melt pool heat map at t = " << std::setprecision(3) << dat_host.tim << "\"; ";
                 output.close();
+                Gnuplot gp;
+                gp << "load \"scriptT.gp\" \n";
+                std::cout << "set output \"" << drop_dir << "/Tmap_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n";
+                gp        << "set output \"" << drop_dir << "/Tmap_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n";
+                gp << "set xrange [0:" << dat_host.Nx * dat_host.h << "]; set yrange [" << 3*dat_host.Nz*dat_host.hz/2 << ":" << -dat_host.Nz*dat_host.hz/2  <<"]\n";
+                gp << "set title \"Al-Ti melt pool heat map at t = " << std::setprecision(3) << dat_host.tim << "\"; ";
                 gp << "splot \"data/dataT.txt\" u 1:2:3 with pm3d\n";
 
-                // Gnuplot gpc;
-                gp << "set terminal png size 1600,900; \nset view map; \nset pm3d at b corners2color c4; \nset palette model RGB; set palette rgbformulae 7,5,15; set palette negative; \nset samples 100; \nset isosamples 100; \nset xyplane relative 0; "; // set palette defined (0.0 \"white\", 1.0 \"black\")\n";
-                gp << "set cbrange [0:1]; set xrange [0:" << dat_host.Nx * dat_host.h << "]; set yrange [" << 3*dat_host.Nz*dat_host.hz/2 << ":" << -dat_host.Nz*dat_host.hz/2  <<"]\n";
-                std::cout << "set output \"" << drop_dir << "/cmap" << (int)dat_host.temp << "_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n";
-                gp       << "set output \"" << drop_dir << "/cmap" << temp << "_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"; ";
-                gp << "set title \"Al concentration in Al-Ti melt pool at t = " << std::setprecision(3) << dat_host.tim << "\"; ";
-                gp << "splot \"data/dataT.txt\" u 1:2:4 with pm3d\n";
+                Gnuplot gpc;
+                gpc << "load \"scriptC.gp\" \n";
+                std::cout << "set output \"" << drop_dir << "/cmap_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n";
+                gpc       << "set output \"" << drop_dir << "/cmap_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n ";
+                gpc << "set xrange [0:" << dat_host.Nx * dat_host.h << "]; set yrange [" << 3*dat_host.Nz*dat_host.hz/2 << ":" << -dat_host.Nz*dat_host.hz/2  <<"]\n";
+                gpc << "set title \"Al concentration in Al-Ti melt pool at t = " << std::setprecision(3) << dat_host.tim << "\"; ";
+                gpc << "splot \"data/dataT.txt\" u 1:2:4 with pm3d\n";
             }
             dat_host.tim += dat_host.tau;
             dat_host.deltaX += dat_host.beam_vel * dat_host.tau;
