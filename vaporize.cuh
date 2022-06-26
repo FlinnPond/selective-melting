@@ -194,9 +194,9 @@ __device__ inline double Min(double A, double B){if(A<B) {return A;} else {retur
 
 __host__ void Data::init(double _temp, int _drop_rate){
     temp=_temp;
-    h = 5e-7;
-    hz = 5e-7;
-    tau = 1e-11;
+    h = 3e-6;
+    hz = 3e-6;
+    tau = 1e-9;
     time_stop = 1e-6;
     drop_rate = (_drop_rate==-1) ? (int)(time_stop/tau) : _drop_rate;  // drop once at the end
     beam_vel = 1; // m\s
@@ -221,7 +221,7 @@ __host__ void Data::init(double _temp, int _drop_rate){
     Nx_calc = 50;
     Nz_calc = 10;
     Nx = 1200;
-    Nz = 100;
+    Nz = 200;
 
     lambda_ti_0_s = -0.3;  lambda_ti_s = 14.6;
     lambda_ti_0_l = -6.7;  lambda_ti_l = 18.3;

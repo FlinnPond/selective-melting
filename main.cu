@@ -111,7 +111,7 @@ __global__ void CalcHeatSource(double *heat_source, int step) {
     int x = blockIdx.x*blockDim.x + threadIdx.x;
     if (x < dat.Nx) {
         double current_time = step * dat.tau;
-        double current_beam_pos = fmax(0.0, current_time * dat.beam_vel - 1e-5) + dat.beam_start * dat.h;
+        double current_beam_pos = fmax(0.0, current_time * dat.beam_vel - 2e-6) + dat.beam_start * dat.h;
         double sigma = dat.beam_radius / 2;
         // heat_source[x] = 2 * dat.beam_power / (M_PI * dat.beam_radius * dat.beam_radius) * exp(-2 * pow(current_time * dat.beam_vel + dat.beam_start * dat.h - x * dat.h, 2) / pow(dat.beam_radius, 2));
         heat_source[x] = dat.beam_power / pow(sigma * sqrt(2*M_PI), 2) * exp(-0.5*pow((x*dat.h - current_beam_pos) / sigma, 2));
@@ -209,6 +209,7 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
                 std::cout << "set output \"" << drop_dir << "/Tmap_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n";
                 gp        << "set output \"" << drop_dir << "/Tmap_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n";
                 gp << "set xrange [0:" << dat_host.Nx * dat_host.h << "]; set yrange [" << 3*dat_host.Nz*dat_host.hz/2 << ":" << -dat_host.Nz*dat_host.hz/2  <<"]\n";
+                // gp << "set xrange [0:" << dat_host.Nx * dat_host.h << "]; set yrange [" << 0 << ":* ]\n";
                 gp << "set palette defined (0 \"black\"," << melt_frac/2 << "\"blue\", " << melt_frac << "\"red\", " << melt_frac << "\"web-green\", " << (1+melt_frac)/2 << "\"yellow\", 1 \"grey90\") \n";
                 gp << "set cbrange [0:" << highest_temp << "] \n";
                 gp << "set title \"Al-Ti melt pool heat map at t = " << std::setprecision(3) << dat_host.tim << "\"; ";
@@ -234,7 +235,7 @@ int main()
 {
     // sim_temp(2700.0, 3300.0, 100.0, 1e-5, 1000, "plots/cmapT_anim11_45");
     // sim_temp(3300.0, 4400.0, 200.0, 1e-5, 1000, "plots/cmapT_anim11_45");
-    sim_temp(3000.0, 3001.0, 200.0, 1e-5, 100000, "plots/cmap_anim11_45");
+    sim_temp(3000.0, 3001.0, 200.0, 2e-3, 100000, "plots/cmap_anim11_45");
 
     return 0;
 }
