@@ -25,6 +25,7 @@ struct constants{
     float HEATS_RAT_ATM;
     double TEMP_ATM;
     double LIQ_DENSITY;
+    double SOL_DENSITY;
     double HEAT_COND_0_SOL, HEAT_COND_SOL;
     double HEAT_COND_0_LIQ, HEAT_COND_LIQ;
 // constants();
@@ -136,6 +137,7 @@ constants::constants(std::string name)
         HEATS_RAT_ATM = 1.66;
         TEMP_ATM = 300;
         LIQ_DENSITY = 2380;
+        SOL_DENSITY = 2700;
         HEAT_COND_0_SOL = 261.1; HEAT_COND_SOL =  -54;
         HEAT_COND_0_LIQ = 63;    HEAT_COND_LIQ =   30;
         }
@@ -160,6 +162,7 @@ constants::constants(std::string name)
         HEATS_RAT_ATM = 1.66;
         TEMP_ATM = 300;
         LIQ_DENSITY = 4130;
+        SOL_DENSITY = 4506;
         HEAT_COND_0_SOL = -0.3; HEAT_COND_SOL = 14.6;
         HEAT_COND_0_LIQ = -6.7; HEAT_COND_LIQ = 18.3;
     }
@@ -191,15 +194,15 @@ __device__ inline double Min(double A, double B){if(A<B) {return A;} else {retur
 
 __host__ void Data::init(double _temp, int _drop_rate){
     temp=_temp;
-    h = 1e-6;
-    hz = 1e-6;
-    tau = 1e-9;
+    h = 5e-7;
+    hz = 5e-7;
+    tau = 1e-11;
     time_stop = 1e-6;
     drop_rate = (_drop_rate==-1) ? (int)(time_stop/tau) : _drop_rate;  // drop once at the end
     beam_vel = 1; // m\s
     beam_power = 300;
-    beam_start = 20;
-    beam_radius = 5e-6;
+    beam_start = 200;
+    beam_radius = 5e-5;
     deltaX = 0;
     
     substrate_length = 1e-5;
@@ -217,8 +220,8 @@ __host__ void Data::init(double _temp, int _drop_rate){
     // Nx = (int)(calc_length / h);
     Nx_calc = 50;
     Nz_calc = 10;
-    Nx = 300;
-    Nz = 50;
+    Nx = 1200;
+    Nz = 100;
 
     lambda_ti_0_s = -0.3;  lambda_ti_s = 14.6;
     lambda_ti_0_l = -6.7;  lambda_ti_l = 18.3;
@@ -247,7 +250,7 @@ __host__ void Data::init(double _temp, int _drop_rate){
     // cudaMallocHost((void**)&ti_next_h, Nx*Nz*sizeof(double)); cudaMemset(ti_next_h, ti_0, Nx*Nz*sizeof(double));
     // cudaMallocHost((void**)&state_field_h, Nx*Nz*sizeof(ST));
     
-    ti_density = 4540;
+    ti_density = 4506;
     al_density = 2700;
     al_dole = 0.5;
     al_mass_dole = al_dole * cts_Al_h->MOL_MASS / (al_dole * cts_Al_h->MOL_MASS + (1.0 - al_dole) * cts_Ti_h->MOL_MASS);
@@ -263,7 +266,7 @@ __host__ void Data::init(double _temp, int _drop_rate){
     ti_mass_loss = 0;
 
     D = 1e-9;
-    al_0 = density/0.027  * al_mass_dole;
+    al_0 = density/0.027 * al_mass_dole;
     ti_0 = density/0.048 * (1 - al_mass_dole);
     step = 0;
 

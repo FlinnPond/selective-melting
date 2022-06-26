@@ -72,26 +72,26 @@ __global__ void CalcHeatConduct(double *heat, double *heat_next, double *heat_so
             
             // double heat_conduct = heat_cond_al    * al_mass_frac + heat_cond_ti    * (1 - al_mass_frac) - 0.72 * (heat_cond_al    - heat_cond_ti)    * al_mass_frac * (1-al_mass_frac);
             // double heat_conduct_dT = heat_cond_al_dT * al_mass_frac + heat_cond_ti_dT * (1 - al_mass_frac) - 0.72 * (heat_cond_al_dT - heat_cond_ti_dT) * al_mass_frac * (1-al_mass_frac);
-            double heat_cond = (dat.cts_Al_d->HEAT_COND_0_LIQ + dat.cts_Ti_d->HEAT_COND_0_LIQ)/2;
-            double heat_cap  = (dat.cts_Al_d->HEAT_CAP_LIQ + dat.cts_Ti_d->HEAT_CAP_LIQ)/2;
-            double density   = (dat.cts_Al_d->LIQ_DENSITY + dat.cts_Ti_d->LIQ_DENSITY)/2;
+            double heat_cond = (dat.cts_Al_d->HEAT_COND_0_SOL + dat.cts_Ti_d->HEAT_COND_0_SOL)/2;
+            double heat_cap  = (dat.cts_Al_d->HEAT_CAP_SOL    + dat.cts_Ti_d->HEAT_CAP_SOL)/2;
+            double density   = (dat.cts_Al_d->SOL_DENSITY     + dat.cts_Ti_d->SOL_DENSITY)/2;
             double D = heat_cond / (heat_cap * density);
             double topD = D;
             double energy_source = 0;
 
             if (state_field[top] == GAS){
-                energy_source = heat_source[x] + heat_loss(heat[index], dat.cts_Al_d);
+                energy_source = heat_source[x]; //+ heat_loss(heat[index], dat.cts_Al_d);
                 energy_source /= (heat_cap * density);
                 topD = 0;
                 // printf("interface:%e", energy_source);
             }
 
             heat_next[index] = heat[index] + dat.tau * (
-                ((D)*(heat[right] - heat[index]) - (D)  *(heat[index] - heat[left]))  /(dat.h *dat.h ) +
-                ((topD)  *(heat[top]   - heat[index]) - (D)*(heat[index] - heat[bottom]))/(dat.hz*dat.hz) + energy_source/(dat.h)
+                ((D)   *(heat[right] - heat[index]) - (D)*(heat[index] - heat[left]))  /(dat.h *dat.h ) +
+                ((topD)*(heat[top]   - heat[index]) - (D)*(heat[index] - heat[bottom]))/(dat.hz*dat.hz) + energy_source/dat.hz
             );
             if (x == 20 && z == 1) {
-                printf("D: %e, heat_next: %e, source: %e\n", D, heat_next[index], energy_source);
+                // printf("D: %e, heat_next: %e, source: %e\n", D, heat_next[index], dat.tau * energy_source/dat.hz);
             }
         }
     }
@@ -112,8 +112,9 @@ __global__ void CalcHeatSource(double *heat_source, int step) {
     if (x < dat.Nx) {
         double current_time = step * dat.tau;
         double current_beam_pos = fmax(0.0, current_time * dat.beam_vel - 1e-5) + dat.beam_start * dat.h;
+        double sigma = dat.beam_radius / 2;
         // heat_source[x] = 2 * dat.beam_power / (M_PI * dat.beam_radius * dat.beam_radius) * exp(-2 * pow(current_time * dat.beam_vel + dat.beam_start * dat.h - x * dat.h, 2) / pow(dat.beam_radius, 2));
-        heat_source[x] = 1 / pow(dat.beam_radius * sqrt(2*M_PI), 2) * exp(-pow(x*dat.h - current_beam_pos, 2) / (2*pow(dat.beam_radius, 2)));
+        heat_source[x] = dat.beam_power / pow(sigma * sqrt(2*M_PI), 2) * exp(-0.5*pow((x*dat.h - current_beam_pos) / sigma, 2));
     }
 }
 
@@ -131,7 +132,6 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
     for (int temp=temp1; temp<temp2; temp+=temp_step)
     {   
         Data dat_host;
-        std::ofstream output;
         dat_host.init((double)temp, drop_rate);
         dat_host.time_stop = time_stop;
         
@@ -146,23 +146,28 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
         std::cout << "copy data: " << cudaGetErrorString(cudaGetLastError()) << "\n";
         //std::cout << dat_host.temp << std::endl;
 
-        // CalcHeatSource<<<blocksPerGridX, threadsPerBlock>>>(dat_host.heat_source_d, dat_host.step);
-        // cudaMemcpy(dat_host.heat_source_h, dat_host.heat_source_d, dat_host.Nx*sizeof(double), cudaMemcpyDeviceToHost);
-        // cudaDeviceSynchronize();    
-        // dat_host.extract();
+        CalcHeatSource<<<blocksPerGridX, threadsPerBlock>>>(dat_host.heat_source_d, dat_host.step);
+        cudaMemcpy(dat_host.heat_source_h, dat_host.heat_source_d, dat_host.Nx*sizeof(double), cudaMemcpyDeviceToHost);
+        cudaDeviceSynchronize();    
+        dat_host.extract();
 
-        // Gnuplot gp;
-        // std::vector<std::pair<double, double>> data;
-        // for (int x = 0; x < dat_host.Nx; x++) {
-        //     double xPos = x * dat_host.h;
-        //     double current_beam_pos = dat_host.beam_start * dat_host.h;
-        //     double yTemp = dat_host.heat_source_h[x];
+        Gnuplot gp;
+        std::vector<std::pair<double, double>> data;
+        for (int x = 0; x < dat_host.Nx; x++) {
+            double xPos = x * dat_host.h;
+            double current_beam_pos = dat_host.beam_start * dat_host.h;
+            double yTemp = dat_host.heat_source_h[x];
             // double yTemp = 1 / (dat_host.beam_radius * sqrt(2*M_PI)) * exp(-pow(x*dat_host.h - current_beam_pos, 2) / (2*pow(dat_host.beam_radius, 2)));
-            // data.push_back(std::make_pair(xPos, yTemp));
+            data.push_back(std::make_pair(xPos, yTemp));
             // std::cout << yTemp << "\n";
-        // }
-        // gp << "plot '-' u 1:2 w l\n";
-        // gp.send1d(data);
+        }
+        double sum = 0;
+        for (int x = 0; x < dat_host.Nx; x++) {
+            sum += std::get<1>(data[x])*(dat_host.h * dat_host.h);
+        }
+        std::cout << sum << "\n";
+        gp << "plot '-' u 1:2 w l\n";
+        gp.send1d(data);
 
         while (dat_host.tim < time_stop)
         {
@@ -180,13 +185,8 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
             
             if (dat_host.step % dat_host.drop_rate == 0) {
                 dat_host.extract();
-                Gnuplot gp;
-                gp << "set terminal png size 1600,900; \nset view map; \nset pm3d at b corners2color c4; \nset palette model RGB; set palette defined; \nset samples 100; \nset isosamples 100; \nset xyplane relative 0; "; // set palette defined (0.0 \"white\", 1.0 \"black\")\n";
-                gp << "set cbrange [0:3000]; set xrange [0:" << dat_host.Nx * dat_host.h << "]; set yrange [" << 3*dat_host.Nz*dat_host.hz/2 << ":" << -dat_host.Nz*dat_host.hz/2  <<"]\n";
+                std::ofstream output;
                 output.open("data/dataT.txt");
-                std::cout << "set output \"" << drop_dir << "/cmap" << (int)dat_host.temp << "_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n";
-                gp        << "set output \"" << drop_dir << "/cmap" << temp << "_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"; ";
-                gp << "set title \"Al-Ti melt pool at t = " << std::setprecision(3) << dat_host.tim << ", T = " << (int)dat_host.temp << "\"; ";
                 cudaDeviceSynchronize();
                 for (int x = 0; x < dat_host.Nx; x++)
                 {
@@ -197,11 +197,22 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
                     // output << x*dat_host.h << " " << dat_host.heat_source[x];
                     output << "\n";
                 }
-                std::cout << "plotting\n";
+                Gnuplot gp;
+                gp << "set terminal png size 1600,900; \nset view map; \nset pm3d at b corners2color c4; \nset palette model RGB; set palette defined; \nset samples 100; \nset isosamples 100; \nset xyplane relative 0; "; // set palette defined (0.0 \"white\", 1.0 \"black\")\n";
+                gp << "set cbrange [0:6000]; set xrange [0:" << dat_host.Nx * dat_host.h << "]; set yrange [" << 3*dat_host.Nz*dat_host.hz/2 << ":" << -dat_host.Nz*dat_host.hz/2  <<"]\n";
+                std::cout << "set output \"" << drop_dir << "/Tmap" << (int)dat_host.temp << "_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n";
+                gp        << "set output \"" << drop_dir << "/Tmap" << temp << "_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"; ";
+                gp << "set title \"Al-Ti melt pool heat map at t = " << std::setprecision(3) << dat_host.tim << "\"; ";
                 output.close();
                 gp << "splot \"data/dataT.txt\" u 1:2:3 with pm3d\n";
-                // gp << "plot \"data/dataT.txt\" u 1:2 with line\n"
-                std::cout << "Done\n";
+
+                // Gnuplot gpc;
+                gp << "set terminal png size 1600,900; \nset view map; \nset pm3d at b corners2color c4; \nset palette model RGB; set palette rgbformulae 7,5,15; set palette negative; \nset samples 100; \nset isosamples 100; \nset xyplane relative 0; "; // set palette defined (0.0 \"white\", 1.0 \"black\")\n";
+                gp << "set cbrange [0:1]; set xrange [0:" << dat_host.Nx * dat_host.h << "]; set yrange [" << 3*dat_host.Nz*dat_host.hz/2 << ":" << -dat_host.Nz*dat_host.hz/2  <<"]\n";
+                std::cout << "set output \"" << drop_dir << "/cmap" << (int)dat_host.temp << "_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n";
+                gp       << "set output \"" << drop_dir << "/cmap" << temp << "_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"; ";
+                gp << "set title \"Al concentration in Al-Ti melt pool at t = " << std::setprecision(3) << dat_host.tim << "\"; ";
+                gp << "splot \"data/dataT.txt\" u 1:2:4 with pm3d\n";
             }
             dat_host.tim += dat_host.tau;
             dat_host.deltaX += dat_host.beam_vel * dat_host.tau;
@@ -215,7 +226,7 @@ int main()
 {
     // sim_temp(2700.0, 3300.0, 100.0, 1e-5, 1000, "plots/cmapT_anim11_45");
     // sim_temp(3300.0, 4400.0, 200.0, 1e-5, 1000, "plots/cmapT_anim11_45");
-    sim_temp(3000.0, 3001.0, 200.0, 1e-4, 1000, "plots/cmap_anim11_45");
+    sim_temp(3000.0, 3001.0, 200.0, 1e-5, 100000, "plots/cmap_anim11_45");
 
     return 0;
 }
