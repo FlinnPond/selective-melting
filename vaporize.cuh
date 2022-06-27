@@ -28,6 +28,7 @@ struct constants{
     double SOL_DENSITY;
     double HEAT_COND_0_SOL, HEAT_COND_SOL;
     double HEAT_COND_0_LIQ, HEAT_COND_LIQ;
+    double A, B;
 // constants();
     constants(std::string name);
 };
@@ -140,6 +141,7 @@ constants::constants(std::string name)
         SOL_DENSITY = 2700;
         HEAT_COND_0_SOL = 261.1; HEAT_COND_SOL =  -54;
         HEAT_COND_0_LIQ = 63;    HEAT_COND_LIQ =   30;
+        A = 10.917; B = -16211;
         }
     else if (name == "Ti")
     {
@@ -165,6 +167,7 @@ constants::constants(std::string name)
         SOL_DENSITY = 4506;
         HEAT_COND_0_SOL = -0.3; HEAT_COND_SOL = 14.6;
         HEAT_COND_0_LIQ = -6.7; HEAT_COND_LIQ = 18.3;
+        A = 11.364; B = -22747;
     }
     else if (name == "Fe")
     {
@@ -265,7 +268,7 @@ __host__ void Data::init(double _temp, int _drop_rate){
     al_mass_loss = 0;
     ti_mass_loss = 0;
 
-    D = 1e-9;
+    D = 1e-7;
     al_0 = density/0.027 * al_mass_dole;
     ti_0 = density/0.048 * (1 - al_mass_dole);
     step = 0;
@@ -282,10 +285,8 @@ __host__ void Data::init(double _temp, int _drop_rate){
             if (x==0)    {state_field_h[x*Nz+z] = WALL;}
             heat_h[x*Nz+z] = 300;
             heat_next_h[x*Nz+z] = 300;
-            // std::cout << x << " of " << Nx << ", " << z << " of " << Nz << std::endl;
         }
         state_field_h[x*Nz+0] = GAS;
-        //if (x>=Nx - 50 && state_field_h[x*Nz+1] != WALL) {state_field_h[x*Nz+1] = INTERFACE;}
         state_field_h[x*Nz+Nz-1] = WALL;
     }
     std::cout << "### al_0 = " << al_0 << std::endl;
@@ -299,7 +300,6 @@ __host__ void Data::init(double _temp, int _drop_rate){
     cudaMalloc((void**)&D_d, Nx*Nz*sizeof(double));        cudaMemcpy(D_d, D_h, Nx*Nz*sizeof(double), cudaMemcpyHostToDevice);
     cudaMalloc((void**)&state_field_d, Nx*Nz*sizeof(ST));  cudaMemcpy(state_field_d, state_field_h, Nx*Nz*sizeof(ST), cudaMemcpyHostToDevice);
     cudaMalloc((void**)&heat_source_d, Nx*sizeof(double)); cudaMemcpy(heat_source_d, heat_source_h, Nx*sizeof(double), cudaMemcpyHostToDevice);
-    //std::cout << "memset " << cts_Al_h->MOL_MASS << ": " << cudaGetErrorString(cudaGetLastError()) << "\n";
 }
 
 __host__ void Data::extract(){
@@ -307,6 +307,7 @@ __host__ void Data::extract(){
     cudaMemcpy(ti_h, ti_d, Nx*Nz*sizeof(double), cudaMemcpyDeviceToHost);
     cudaMemcpy(heat_h, heat_d, Nx*Nz*sizeof(double), cudaMemcpyDeviceToHost);
     cudaMemcpy(heat_source_h, heat_source_d, Nx*sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(state_field_h, state_field_d, Nx*Nz*sizeof(ST), cudaMemcpyDeviceToHost);
 }
 
 __host__ void Data::clean(){
@@ -415,6 +416,7 @@ __device__ double f_dt(double mach, double temp_surf, constants* cts)
 }
 __device__ double g(double temp_surf, constants* cts)
 {
+    return ps(temp_surf, cts) / cts-> PRESS_AMB;
     return  cts->press_atm /  cts->PRESS_AMB * exp
     (
         -  cts->MASS_ATOM *  cts->EVAPOR_HEAT /  cts->BOLTZ_CONST * 
@@ -427,7 +429,7 @@ __device__ double g(double temp_surf, constants* cts)
 }
 __device__ double g_d(double temp_surf, constants* cts)
 {
-    return (g(temp_surf, cts) - g(temp_surf - 0.1, cts)) * 10;
+    return (g(temp_surf, cts) - g(temp_surf - 0.01, cts)) * 100;
     // return  cts->press_atm /  cts->PRESS_AMB * g(temp_surf, cts) *  cts->MASS_ATOM *  cts->EVAPOR_HEAT /  cts->BOLTZ_CONST * pow(temp_surf, -2) * sqrt(1 - pow(temp_surf /  cts->TEMP_CRIT, 2));
 }
 __device__ double g_new(double temp_surf, constants* cts)
@@ -488,10 +490,15 @@ __device__ double ps(double t_s, constants* cts)
         )
     );
 }
+
+__device__ double ps_CC(double t, constants* cts)
+{
+    return pow(10, cts->A + cts->B / t) * cts->press_atm;
+}
 __device__ double mach_exact(double t_s, constants* cts)
 {
     double mach = 0.5;
-    for (int j = 0; j < 10; j++)
+    for (int j = 0; j < 5; j++)
     {
         mach -= h(mach, t_s, cts) / f_d(mach, t_s, cts);
     }
@@ -522,6 +529,7 @@ __device__ double mass_loss(double temp, constants* cts)
     float phi = sqrt(2 * M_PI *  cts->HEATS_RAT) * mach * _f2(sqrt( cts->HEATS_RAT / 2) * mach, cts) * _f1(sqrt( cts->HEATS_RAT / 2) * mach, cts);
     float j = phi * ps(temp, cts) * sqrt( cts->MASS_ATOM / (2 * M_PI *  cts->BOLTZ_CONST * temp));
     //std::cout << "ps = " << ps(temp, cts) << std::endl;
+    // printf("ps| temp: %e, ps: %e, mach: %e, phi: %e, j: %e\n", temp, ps(temp, cts), mach, phi, j);
     return j;
 
 }

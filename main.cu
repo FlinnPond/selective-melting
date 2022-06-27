@@ -11,35 +11,38 @@ __constant__ Data dat;
 // __device__ inline double Max(double A, double B){if(A>B) return A; else return B;}
 // __device__ inline double Min(double A, double B){if(A<B) return A; else return B;}
 
-__global__ void CalcDiffusion(double* al, double* ti, double* al_next, double* ti_next, ST* state_field) {
+__global__ void CalcDiffusion(double* al, double* ti, double* al_next, double* ti_next, ST* state_field, double* heat) {
     int x = blockIdx.x*blockDim.x + threadIdx.x;
     int z = blockIdx.y*blockDim.y + threadIdx.y;
     int center = x*dat.Nz+z;
-    if (x < dat.Nx && z < dat.Nz) {
-        if (state_field[center] == FLUID) {
-            int left  = (x-1)*dat.Nz+z;
-            int right = (x+1)*dat.Nz+z;
-            int top    = x*dat.Nz+z-1;
-            int bottom = x*dat.Nz+z+1;
-            double al_mass_loss, ti_mass_loss;
-            double leftal, leftti, rightal, rightti;
-            double topal, topti, bottomal, bottomti;
-            double al_dole = al[center] / (al[center] + ti[center]);
-            al_mass_loss = 0;
-            ti_mass_loss = 0;
+    if (x < dat.Nx && z < dat.Nz && state_field[center] == FLUID) {
+        int left  = (x-1)*dat.Nz+z;
+        int right = (x+1)*dat.Nz+z;
+        int top    = x*dat.Nz+z-1;
+        int bottom = x*dat.Nz+z+1;
+        double al_mass_loss, ti_mass_loss;
+        double al_dole = al[center] / (al[center] + ti[center]);
+        al_mass_loss = 0;
+        ti_mass_loss = 0;
 
-            if (state_field[top] == GAS) {
-                al_mass_loss = Max(0.0,      al_dole  * activity_Al(dat.temp, al_dole, dat.cts_Al_d) * mass_loss(dat.temp, dat.cts_Al_d) * dat.tau);
-                ti_mass_loss = Max(0.0, (1 - al_dole) * activity_Ti(dat.temp, al_dole, dat.cts_Ti_d) * mass_loss(dat.temp, dat.cts_Ti_d) * dat.tau);
-                //printf("loss: %e, param1: %e, param1: %e, temp: %e\n", mass_loss(dat.temp, dat.cts_Al_d), dat.cts_Al_d->MOL_MASS, dat.cts_Al_d->R, dat.temp);
-            }
-            if (state_field[left]   == WALL) {leftal   = al[center];leftti   = ti[center];} else {leftal   = al[left];  leftti   = ti[left];}
-            if (state_field[right]  == WALL) {rightal  = al[center];rightti  = ti[center];} else {rightal  = al[right]; rightti  = ti[right];}
-            if (state_field[top]    == WALL) {topal    = al[center];topti    = ti[center];} else {topal    = al[top];   topti    = ti[top];}
-            if (state_field[bottom] == WALL) {bottomal = al[center];bottomti = ti[center];} else {bottomal = al[bottom];bottomti = ti[bottom];}
+        if (state_field[top] == GAS && x > 200 && x < 300) {
+            al_mass_loss = Max(0.0,      al_dole  * activity_Al(heat[center], al_dole, dat.cts_Al_d) * mass_loss(heat[center], dat.cts_Al_d) * dat.tau);
+            ti_mass_loss = Max(0.0, (1 - al_dole) * activity_Ti(heat[center], al_dole, dat.cts_Ti_d) * mass_loss(heat[center], dat.cts_Ti_d) * dat.tau);
+        }
+        double leftD   = (state_field[left]   == FLUID) ? dat.D : 0;
+        double rightD  = (state_field[right]  == FLUID) ? dat.D : 0;
+        double topD    = (state_field[top]    == FLUID) ? dat.D : 0;
+        double bottomD = (state_field[bottom] == FLUID) ? dat.D : 0;
 
-            al_next[center] = Max(0.0, al[center] + dat.tau * dat.D * ((rightal - 2*al[center] + leftal) / (dat.h*dat.h) + (bottomal - 2*al[center] + topal)/(dat.hz*dat.hz)) - al_mass_loss / 0.027 / dat.hz);
-            ti_next[center] = Max(0.0, ti[center] + dat.tau * dat.D * ((rightti - 2*ti[center] + leftti) / (dat.h*dat.h) + (bottomti - 2*ti[center] + topti)/(dat.hz*dat.hz)) - ti_mass_loss / 0.048 / dat.hz);
+        al_next[center] = Max(0.0, al[center] + dat.tau * (( rightD*(al[right]  - al[center]) - leftD*(al[center] - al[left]))/(dat.h*dat.h) + 
+                                                           (bottomD*(al[bottom] - al[center]) -  topD*(al[center] - al[top] ))/(dat.hz*dat.hz)) - 
+                                                           al_mass_loss / 0.027 / dat.hz);
+        
+        ti_next[center] = Max(0.0, ti[center] + dat.tau * (( rightD*(ti[right]  - ti[center]) - leftD*(ti[center] - ti[left]))/(dat.h*dat.h) + 
+                                                           (bottomD*(ti[bottom] - ti[center]) -  topD*(ti[center] - ti[top] ))/(dat.hz*dat.hz)) - 
+                                                           ti_mass_loss / 0.048 / dat.hz);
+        if (x == 205 && z == 1 && al_mass_loss != 0.0) {
+            // printf("al_mass_loss = %e, bottomD: %e, ps = %e, ps_CC = %e\n", al_mass_loss, bottomD, ps_CC(heat[center], dat.cts_Al_d), ps(heat[center], dat.cts_Al_d));
         }
     }
 }
@@ -56,44 +59,27 @@ __global__ void CalcHeatConduct(double *heat, double *heat_next, double *heat_so
     int top    = x*dat.Nz+z-1;
     int bottom = x*dat.Nz+z+1;
 
-    if (x < dat.Nx && z < dat.Nz) {
-        if(state_field[index] == FLUID || state_field[index] == SOLID){
-            if (state_field[index] == FLUID) {
-                heat_cond_al = dat.cts_Al_d->HEAT_COND_0_LIQ + dat.cts_Al_d->HEAT_COND_LIQ * 500;// * heat[index];
-                heat_cond_al_dT = dat.cts_Al_d->HEAT_COND_LIQ;
-                heat_cond_ti = dat.cts_Ti_d->HEAT_COND_0_LIQ + dat.cts_Ti_d->HEAT_COND_LIQ * 1000;//heat[index];
-                heat_cond_ti_dT = dat.cts_Ti_d->HEAT_COND_LIQ;
-            } else {
-                heat_cond_al = dat.cts_Al_d->HEAT_COND_0_SOL + dat.cts_Al_d->HEAT_COND_SOL * 2000;//heat[index];
-                heat_cond_al_dT = dat.cts_Al_d->HEAT_COND_SOL;
-                heat_cond_ti = dat.cts_Ti_d->HEAT_COND_0_SOL + dat.cts_Ti_d->HEAT_COND_SOL * 3000;//heat[index];
-                heat_cond_ti_dT = dat.cts_Ti_d->HEAT_COND_SOL;
-            }
-            
-            // double heat_conduct = heat_cond_al    * al_mass_frac + heat_cond_ti    * (1 - al_mass_frac) - 0.72 * (heat_cond_al    - heat_cond_ti)    * al_mass_frac * (1-al_mass_frac);
-            // double heat_conduct_dT = heat_cond_al_dT * al_mass_frac + heat_cond_ti_dT * (1 - al_mass_frac) - 0.72 * (heat_cond_al_dT - heat_cond_ti_dT) * al_mass_frac * (1-al_mass_frac);
-            double heat_cond = (dat.cts_Al_d->HEAT_COND_0_SOL + dat.cts_Ti_d->HEAT_COND_0_SOL)/2;
-            double heat_cap  = (dat.cts_Al_d->HEAT_CAP_SOL    + dat.cts_Ti_d->HEAT_CAP_SOL)/2;
-            double density   = (dat.cts_Al_d->SOL_DENSITY     + dat.cts_Ti_d->SOL_DENSITY)/2;
-            double D = heat_cond / (heat_cap * density);
-            double topD = D;
-            double energy_source = 0;
+    if (x < dat.Nx && z < dat.Nz && (state_field[index] == FLUID || state_field[index] == SOLID)) {
+        double heat_cond = (dat.cts_Al_d->HEAT_COND_0_SOL + dat.cts_Ti_d->HEAT_COND_0_SOL)/2;
+        double heat_cap  = (dat.cts_Al_d->HEAT_CAP_SOL    + dat.cts_Ti_d->HEAT_CAP_SOL)/2;
+        double density   = (dat.cts_Al_d->SOL_DENSITY     + dat.cts_Ti_d->SOL_DENSITY)/2;
+        double D = heat_cond / (heat_cap * density);
+        double topD = D;
+        double energy_source = 0;
 
-            if (state_field[top] == GAS){
-                energy_source = heat_source[x]; //+ heat_loss(heat[index], dat.cts_Al_d);
-                energy_source /= (heat_cap * density);
-                topD = 0;
-                // printf("interface:%e", energy_source);
-            }
-
-            heat_next[index] = heat[index] + dat.tau * (
-                ((D)   *(heat[right] - heat[index]) - (D)*(heat[index] - heat[left]))  /(dat.h *dat.h ) +
-                ((topD)*(heat[top]   - heat[index]) - (D)*(heat[index] - heat[bottom]))/(dat.hz*dat.hz) + energy_source/dat.hz
-            );
-            if (x == 20 && z == 1) {
-                // printf("D: %e, heat_next: %e, source: %e\n", D, heat_next[index], dat.tau * energy_source/dat.hz);
-            }
+        if (state_field[top] == GAS){
+            energy_source = heat_source[x] - heat_loss(heat[index], dat.cts_Al_d);
+            energy_source /= (heat_cap * density);
+            topD = 0;
         }
+
+        heat_next[index] = heat[index] + dat.tau * (
+            ((D)   *(heat[right] - heat[index]) - (D)*(heat[index] - heat[left]))  /(dat.h *dat.h ) +
+            ((topD)*(heat[top]   - heat[index]) - (D)*(heat[index] - heat[bottom]))/(dat.hz*dat.hz) + energy_source/dat.hz
+        );
+        // if (x == 20 && z == 1) {
+        //     // printf("D: %e, heat_next: %e, source: %e\n", D, heat_next[index], dat.tau * energy_source/dat.hz);
+        // }
     }
 }
 
@@ -101,9 +87,9 @@ __global__ void UpdateState(ST* state_field, double* heat) {
     int x = blockIdx.x*blockDim.x + threadIdx.x;
     int z = blockIdx.y*blockDim.y + threadIdx.y;
     int center = x*dat.Nz+z;
-    if(x<dat.Nx && z<dat.Nz) {
-        if(state_field[center] == FLUID && heat[center] <  dat.cts_Ti_d->TEMP_LIQ) {state_field[center] = SOLID;}
-        if(state_field[center] == SOLID && heat[center] >= dat.cts_Ti_d->TEMP_LIQ) {state_field[center] = FLUID;}
+    if(x<dat.Nx && z<dat.Nz && (state_field[center] == SOLID || state_field[center] == FLUID)) {
+        if     (heat[center] <  dat.cts_Ti_d->TEMP_LIQ) {state_field[center] = SOLID;}
+        else if(heat[center] >= dat.cts_Ti_d->TEMP_LIQ) {state_field[center] = FLUID;}
     }
 }
 
@@ -148,7 +134,7 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
         // draw beam power spread
         CalcHeatSource<<<blocksPerGridX, threadsPerBlock>>>(dat_host.heat_source_d, dat_host.step);
         cudaMemcpy(dat_host.heat_source_h, dat_host.heat_source_d, dat_host.Nx*sizeof(double), cudaMemcpyDeviceToHost);
-        cudaDeviceSynchronize();    
+        cudaDeviceSynchronize();
         dat_host.extract();
 
         Gnuplot gp;
@@ -173,16 +159,16 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
         {
             dat_host.step++;
             //std::cout << "temp " << temp << ", step " << dat_host.step << ": time = " << dat_host.tim << "; " << (dat_host.tim) / time_stop * 100 << "%" << std::endl;
-            // CalcDiffusion<<<gridShape, blockShape>>>(dat_host.al_d, dat_host.ti_d, dat_host.al_next_d, dat_host.ti_next_d, dat_host.state_field_d);
-            // std::swap(dat_host.al_next_d, dat_host.al_d);
-            // std::swap(dat_host.ti_next_d, dat_host.ti_d);
-            // cudaDeviceSynchronize();
-            cudaDeviceSynchronize();
             CalcHeatSource<<<blocksPerGridX, threadsPerBlock>>>(dat_host.heat_source_d, dat_host.step);
             cudaDeviceSynchronize();
             CalcHeatConduct<<<gridShape, blockShape>>>(dat_host.heat_d, dat_host.heat_next_d, dat_host.heat_source_d, dat_host.al_d, dat_host.ti_d, dat_host.state_field_d);
             std::swap(dat_host.heat_next_d, dat_host.heat_d);
-            
+            cudaDeviceSynchronize();
+            UpdateState<<<gridShape, blockShape>>>(dat_host.state_field_d, dat_host.heat_d);
+            cudaDeviceSynchronize();
+            CalcDiffusion<<<gridShape, blockShape>>>(dat_host.al_d, dat_host.ti_d, dat_host.al_next_d, dat_host.ti_next_d, dat_host.state_field_d, dat_host.heat_d);
+            std::swap(dat_host.al_next_d, dat_host.al_d);
+            std::swap(dat_host.ti_next_d, dat_host.ti_d);            
             if (dat_host.step % dat_host.drop_rate == 0) {
                 cudaDeviceSynchronize();
                 dat_host.extract();
@@ -194,7 +180,7 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
                 {
                     for (int z = 0; z < dat_host.Nz; z++)
                     {
-                        output << x*dat_host.h << " " << z*dat_host.hz << " " << dat_host.heat_h[x*dat_host.Nz+z] << " " << dat_host.al_h[x*dat_host.Nz+z]/dat_host.al_0 << " " << dat_host.ti_h[x*dat_host.Nz+z]/dat_host.ti_0 << " " << dat_host.state_field_h[x*dat_host.Nz+z]/3.0 << "\n";
+                        output << x*dat_host.h << " " << z*dat_host.hz << " " << dat_host.heat_h[x*dat_host.Nz+z] << " " << dat_host.al_h[x*dat_host.Nz+z]/dat_host.al_0 << " " << dat_host.ti_h[x*dat_host.Nz+z]/dat_host.ti_0 << " " << dat_host.state_field_h[x*dat_host.Nz+z] << "\n";
                     }
                     output << "\n";
                 }
@@ -222,6 +208,14 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
                 gpc << "set xrange [0:" << dat_host.Nx * dat_host.h << "]; set yrange [" << 3*dat_host.Nz*dat_host.hz/2 << ":" << -dat_host.Nz*dat_host.hz/2  <<"]\n";
                 gpc << "set title \"Al concentration in Al-Ti melt pool at t = " << std::setprecision(3) << dat_host.tim << "\"; ";
                 gpc << "splot \"data/dataT.txt\" u 1:2:4 with pm3d\n";
+
+                Gnuplot gps;
+                gpc << "load \"scriptState.gp\" \n";
+                std::cout << "set output \"" << drop_dir << "/statemap_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n";
+                gpc       << "set output \"" << drop_dir << "/statemap_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n ";
+                gpc << "set xrange [0:" << dat_host.Nx * dat_host.h << "]; set yrange [" << 3*dat_host.Nz*dat_host.hz/2 << ":" << -dat_host.Nz*dat_host.hz/2  <<"]\n";
+                gpc << "set title \"State in Al-Ti melt pool at t = " << std::setprecision(3) << dat_host.tim << "\"; ";
+                gpc << "splot \"data/dataT.txt\" u 1:2:6 with pm3d\n";
             }
             dat_host.tim += dat_host.tau;
             dat_host.deltaX += dat_host.beam_vel * dat_host.tau;
