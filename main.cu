@@ -21,7 +21,7 @@ __global__ void CalcDiffusion(double* al, double* ti, double* al_next, double* t
         int top    = x*dat.Nz+z-1;
         int bottom = x*dat.Nz+z+1;
         double al_mass_loss, ti_mass_loss;
-        double al_dole = al[center] / (al[center] + ti[center]);
+        double al_dole = (al[center]+ti[center] == 0) ? 0 : al[center] / (al[center] + ti[center]);
         al_mass_loss = 0;
         ti_mass_loss = 0;
 
@@ -37,12 +37,12 @@ __global__ void CalcDiffusion(double* al, double* ti, double* al_next, double* t
         al_next[center] = Max(0.0, al[center] + dat.tau * (( rightD*(al[right]  - al[center]) - leftD*(al[center] - al[left]))/(dat.h*dat.h) + 
                                                            (bottomD*(al[bottom] - al[center]) -  topD*(al[center] - al[top] ))/(dat.hz*dat.hz)) - 
                                                            al_mass_loss / 0.027 / dat.hz);
-        
         ti_next[center] = Max(0.0, ti[center] + dat.tau * (( rightD*(ti[right]  - ti[center]) - leftD*(ti[center] - ti[left]))/(dat.h*dat.h) + 
                                                            (bottomD*(ti[bottom] - ti[center]) -  topD*(ti[center] - ti[top] ))/(dat.hz*dat.hz)) - 
                                                            ti_mass_loss / 0.048 / dat.hz);
-        if (x == 205 && z == 1 && al_mass_loss != 0.0) {
-            // printf("al_mass_loss = %e, bottomD: %e, ps = %e, ps_CC = %e\n", al_mass_loss, bottomD, ps_CC(heat[center], dat.cts_Al_d), ps(heat[center], dat.cts_Al_d));
+        if (isnan(al_next[center])) {
+            printf("X:%i, z: %i, al_next: %e, loss: %e, mass_loss/mu/h: %e, mass_loss: %e, activity_Al: %e, al_dole: %e \n",x, z, al_next[center], al_mass_loss / 0.027 / dat.hz, al_mass_loss, mass_loss(heat[center], dat.cts_Al_d) * dat.tau, activity_Al(heat[center], al_dole, dat.cts_Al_d), al_dole);
+            al_next[center] = dat.al_0;
         }
     }
 }

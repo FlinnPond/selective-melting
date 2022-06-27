@@ -6,3 +6,4 @@ set palette model RGB
 set palette rgbformulae 7,5,15
 set palette negative
 set cbrange [0:1]
+set size ratio -1

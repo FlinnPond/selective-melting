@@ -268,7 +268,7 @@ __host__ void Data::init(double _temp, int _drop_rate){
     al_mass_loss = 0;
     ti_mass_loss = 0;
 
-    D = 1e-7;
+    D = 1e-8;
     al_0 = density/0.027 * al_mass_dole;
     ti_0 = density/0.048 * (1 - al_mass_dole);
     step = 0;
