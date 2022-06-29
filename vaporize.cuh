@@ -203,7 +203,7 @@ __host__ void Data::init(double _temp, int _drop_rate){
     time_stop = 1e-6;
     drop_rate = (_drop_rate==-1) ? (int)(time_stop/tau) : _drop_rate;  // drop once at the end
     beam_vel = 1; // m\s
-    beam_power = 300;
+    beam_power = 1000;
     beam_start = 200;
     beam_radius = 5e-5;
     deltaX = 0;

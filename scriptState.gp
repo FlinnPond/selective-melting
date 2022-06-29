@@ -7,3 +7,6 @@ set palette defined
 set cbrange [0:3]
 
 set size ratio -1
+
+set xlabel "x, m^{-6}"
+set zlabel "y, m^{-6}"

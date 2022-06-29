@@ -25,7 +25,7 @@ __global__ void CalcDiffusion(double* al, double* ti, double* al_next, double* t
         al_mass_loss = 0;
         ti_mass_loss = 0;
 
-        if (state_field[top] == GAS && x > 200 && x < 300) {
+        if (state_field[top] == GAS) {
             al_mass_loss = Max(0.0,      al_dole  * activity_Al(heat[center], al_dole, dat.cts_Al_d) * mass_loss(heat[center], dat.cts_Al_d) * dat.tau);
             ti_mass_loss = Max(0.0, (1 - al_dole) * activity_Ti(heat[center], al_dole, dat.cts_Ti_d) * mass_loss(heat[center], dat.cts_Ti_d) * dat.tau);
         }
@@ -137,7 +137,7 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
         cudaDeviceSynchronize();
         dat_host.extract();
 
-        Gnuplot gp;
+        Gnuplot gp ("gnuplot -persist");
         std::vector<std::pair<double, double>> data;
         for (int x = 0; x < dat_host.Nx; x++) {
             double xPos = x * dat_host.h;
@@ -151,6 +151,11 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
         for (int x = 0; x < dat_host.Nx; x++) {
             sum += std::get<1>(data[x])*(dat_host.h * dat_host.h);
         }
+        gp << "set terminal svg size 800,300\n";
+        gp << "set output \"plots/beam_profile.svg\"\n";
+        gp << "set xrange [0:" << dat_host.Nx * dat_host.h << "]\n";
+        gp << "unset border\n unset xtics\n unset raxis\n unset rtics\n";
+        // gp << "set size ratio -1 \n";
         std::cout << sum << "\n";
         gp << "plot '-' u 1:2 w l\n";
         gp.send1d(data);
@@ -174,18 +179,20 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
                 dat_host.extract();
                 std::ofstream output;
                 output.open("data/dataT.txt");
-
+                double maxT = 0;
                 cudaDeviceSynchronize();
+                double scale = 1e6;
                 for (int x = 0; x < dat_host.Nx; x++)
                 {
                     for (int z = 0; z < dat_host.Nz; z++)
                     {
-                        output << x*dat_host.h << " " << z*dat_host.hz << " " << dat_host.heat_h[x*dat_host.Nz+z] << " " << dat_host.al_h[x*dat_host.Nz+z]/dat_host.al_0 << " " << dat_host.ti_h[x*dat_host.Nz+z]/dat_host.ti_0 << " " << dat_host.state_field_h[x*dat_host.Nz+z] << "\n";
+                        if (dat_host.heat_h[x*dat_host.Nz+z] > maxT) {maxT = dat_host.heat_h[x*dat_host.Nz+z];}
+                        output << x*dat_host.h*scale << " " << z*dat_host.hz*scale << " " << dat_host.heat_h[x*dat_host.Nz+z] << " " << dat_host.al_h[x*dat_host.Nz+z]/dat_host.al_0 << " " << dat_host.ti_h[x*dat_host.Nz+z]/dat_host.ti_0 << " " << dat_host.state_field_h[x*dat_host.Nz+z] << "\n";
                     }
                     output << "\n";
                 }
                 output.close();
-
+                std::cout << "Tmax is: " << maxT << "\n";
                 float highest_temp = 6000;
                 float melt_temp = dat_host.cts_Ti_h->TEMP_MELT;
                 float melt_frac = melt_temp / highest_temp;
@@ -194,7 +201,7 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
                 gp << "load \"scriptT.gp\" \n";
                 std::cout << "set output \"" << drop_dir << "/Tmap_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n";
                 gp        << "set output \"" << drop_dir << "/Tmap_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n";
-                gp << "set xrange [0:" << dat_host.Nx * dat_host.h << "]; set yrange [" << 3*dat_host.Nz*dat_host.hz/2 << ":" << -dat_host.Nz*dat_host.hz/2  <<"]\n";
+                gp << "set xrange [0:" << dat_host.Nx * dat_host.h*scale << "]; set yrange [" << 3*dat_host.Nz*dat_host.hz/2*scale << ":" << -dat_host.Nz*dat_host.hz/2*scale  <<"]\n";
                 // gp << "set xrange [0:" << dat_host.Nx * dat_host.h << "]; set yrange [" << 0 << ":* ]\n";
                 gp << "set palette defined (0 \"black\"," << melt_frac/2 << "\"blue\", " << melt_frac << "\"red\", " << melt_frac << "\"web-green\", " << (1+melt_frac)/2 << "\"yellow\", 1 \"grey90\") \n";
                 gp << "set cbrange [0:" << highest_temp << "] \n";
@@ -205,7 +212,7 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
                 gpc << "load \"scriptC.gp\" \n";
                 std::cout << "set output \"" << drop_dir << "/cmap_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n";
                 gpc       << "set output \"" << drop_dir << "/cmap_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n ";
-                gpc << "set xrange [0:" << dat_host.Nx * dat_host.h << "]; set yrange [" << 3*dat_host.Nz*dat_host.hz/2 << ":" << -dat_host.Nz*dat_host.hz/2  <<"]\n";
+                gpc << "set xrange [0:" << dat_host.Nx * dat_host.h*scale << "]; set yrange [" << 3*dat_host.Nz*dat_host.hz/2*scale << ":" << -dat_host.Nz*dat_host.hz/2*scale  <<"]\n";
                 gpc << "set title \"Al concentration in Al-Ti melt pool at t = " << std::setprecision(3) << dat_host.tim << "\"; ";
                 gpc << "splot \"data/dataT.txt\" u 1:2:4 with pm3d\n";
 
@@ -213,7 +220,7 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
                 gpc << "load \"scriptState.gp\" \n";
                 std::cout << "set output \"" << drop_dir << "/statemap_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n";
                 gpc       << "set output \"" << drop_dir << "/statemap_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n ";
-                gpc << "set xrange [0:" << dat_host.Nx * dat_host.h << "]; set yrange [" << 3*dat_host.Nz*dat_host.hz/2 << ":" << -dat_host.Nz*dat_host.hz/2  <<"]\n";
+                gpc << "set xrange [0:" << dat_host.Nx * dat_host.h*scale << "]; set yrange [" << 3*dat_host.Nz*dat_host.hz/2*scale << ":" << -dat_host.Nz*dat_host.hz/2*scale  <<"]\n";
                 gpc << "set title \"State in Al-Ti melt pool at t = " << std::setprecision(3) << dat_host.tim << "\"; ";
                 gpc << "splot \"data/dataT.txt\" u 1:2:6 with pm3d\n";
             }
@@ -229,7 +236,7 @@ int main()
 {
     // sim_temp(2700.0, 3300.0, 100.0, 1e-5, 1000, "plots/cmapT_anim11_45");
     // sim_temp(3300.0, 4400.0, 200.0, 1e-5, 1000, "plots/cmapT_anim11_45");
-    sim_temp(3000.0, 3001.0, 200.0, 2e-3, 100000, "plots/cmap_anim11_45");
+    sim_temp(3000.0, 3001.0, 200.0, 2e-3, 10000, "plots/maps_anim11_05");
 
     return 0;
 }
