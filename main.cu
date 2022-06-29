@@ -203,9 +203,9 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
                 gp        << "set output \"" << drop_dir << "/Tmap_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n";
                 gp << "set xrange [0:" << dat_host.Nx * dat_host.h*scale << "]; set yrange [" << 3*dat_host.Nz*dat_host.hz/2*scale << ":" << -dat_host.Nz*dat_host.hz/2*scale  <<"]\n";
                 // gp << "set xrange [0:" << dat_host.Nx * dat_host.h << "]; set yrange [" << 0 << ":* ]\n";
-                gp << "set palette defined (0 \"black\"," << melt_frac/2 << "\"blue\", " << melt_frac << "\"red\", " << melt_frac << "\"web-green\", " << (1+melt_frac)/2 << "\"yellow\", 1 \"grey90\") \n";
+                gp << "set palette defined (0 \"black\"," << melt_frac/2 << "\"blue\", " << melt_frac << "\"red\", " << melt_frac << "\"#00efc1\", " << (1+melt_frac)/2 << "\"#ffff46\", 1 \"grey90\") \n";
                 gp << "set cbrange [0:" << highest_temp << "] \n";
-                gp << "set title \"Al-Ti melt pool heat map at t = " << std::setprecision(3) << dat_host.tim << "\"; ";
+                gp << "set title \"Al-Ti melt pool heat map at t = " << std::setprecision(3) << dat_host.tim << ", T_{max} = " << (int)maxT << "\"; ";
                 gp << "splot \"data/dataT.txt\" u 1:2:3 with pm3d\n";
 
                 Gnuplot gpc;

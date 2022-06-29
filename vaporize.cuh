@@ -141,7 +141,7 @@ constants::constants(std::string name)
         SOL_DENSITY = 2700;
         HEAT_COND_0_SOL = 261.1; HEAT_COND_SOL =  -54;
         HEAT_COND_0_LIQ = 63;    HEAT_COND_LIQ =   30;
-        A = 10.917; B = -16211;
+        A = 5.911; B = -16211;
         }
     else if (name == "Ti")
     {
@@ -478,7 +478,7 @@ __device__ double activity_Ti(double temp_surf, double mole_dole, constants* cts
     // sum = -108250 + 38 * (int)temp_surf + ( - 6000 + 5 * (int)temp_surf ) * (2*mole_dole - 1) + 15000  * pow((2 * mole_dole - 1), 2);
     return exp(pow(mole_dole, 2) * (sum - 2 * (1 - mole_dole) * (L_Ti_Al[1] + 2 * L_Ti_Al[2] * (2 * mole_dole - 1))) / ( cts->R * temp_surf));
 }
-__device__ double ps(double t_s, constants* cts)
+__device__ double ps_CC(double t_s, constants* cts)
 {
     return  cts->press_atm * exp
     (
@@ -491,7 +491,7 @@ __device__ double ps(double t_s, constants* cts)
     );
 }
 
-__device__ double ps_CC(double t, constants* cts)
+__device__ double ps(double t, constants* cts)
 {
     return pow(10, cts->A + cts->B / t) * cts->press_atm;
 }
