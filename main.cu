@@ -201,12 +201,23 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
                 gp << "load \"scriptT.gp\" \n";
                 std::cout << "set output \"" << drop_dir << "/Tmap_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n";
                 gp        << "set output \"" << drop_dir << "/Tmap_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n";
+                gp << "set xrange [" << (fmax(0.0, dat_host.step*dat_host.tau * dat_host.beam_vel - 2e-6) + (dat_host.beam_start - 100) * dat_host.h)*scale << ":" << (fmax(0.0, dat_host.step*dat_host.tau * dat_host.beam_vel - 2e-6) + (dat_host.beam_start + 100) * dat_host.h)*scale << "]; set yrange [" << 3*dat_host.Nz*dat_host.hz/2*scale*1/3 << ":" << -dat_host.Nz*dat_host.hz/2*scale*0.25  <<"]\n";
+                // gp << "set xrange [0:" << dat_host.Nx * dat_host.h << "]; set yrange [" << 0 << ":* ]\n";
+                gp << "set palette defined (0 \"black\"," << melt_frac/2 << "\"blue\", " << melt_frac << "\"red\", " << melt_frac << "\"#00efc1\", " << (1+melt_frac)/2 << "\"#ffff46\", 1 \"grey90\") \n";
+                gp << "set cbrange [0:" << highest_temp << "] \n";
+                gp << "set title \"Al-Ti melt pool heat map at t = " << std::setprecision(3) << dat_host.tim << ", T_{max} = " << (int)maxT << "\"; ";
+                gp << "splot \"data/dataT.txt\" u 1:2:3 with pm3d\n";
+
+                gp << "load \"scriptT.gp\" \n";
+                std::cout << "set output \"" << drop_dir << "/Tmapzoomed_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n";
+                gp        << "set output \"" << drop_dir << "/Tmapzoomed_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n";
                 gp << "set xrange [0:" << dat_host.Nx * dat_host.h*scale << "]; set yrange [" << 3*dat_host.Nz*dat_host.hz/2*scale << ":" << -dat_host.Nz*dat_host.hz/2*scale  <<"]\n";
                 // gp << "set xrange [0:" << dat_host.Nx * dat_host.h << "]; set yrange [" << 0 << ":* ]\n";
                 gp << "set palette defined (0 \"black\"," << melt_frac/2 << "\"blue\", " << melt_frac << "\"red\", " << melt_frac << "\"#00efc1\", " << (1+melt_frac)/2 << "\"#ffff46\", 1 \"grey90\") \n";
                 gp << "set cbrange [0:" << highest_temp << "] \n";
                 gp << "set title \"Al-Ti melt pool heat map at t = " << std::setprecision(3) << dat_host.tim << ", T_{max} = " << (int)maxT << "\"; ";
                 gp << "splot \"data/dataT.txt\" u 1:2:3 with pm3d\n";
+
 
                 Gnuplot gpc;
                 gpc << "load \"scriptC.gp\" \n";
@@ -215,6 +226,14 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
                 gpc << "set xrange [0:" << dat_host.Nx * dat_host.h*scale << "]; set yrange [" << 3*dat_host.Nz*dat_host.hz/2*scale << ":" << -dat_host.Nz*dat_host.hz/2*scale  <<"]\n";
                 gpc << "set title \"Al concentration in Al-Ti melt pool at t = " << std::setprecision(3) << dat_host.tim << "\"; ";
                 gpc << "splot \"data/dataT.txt\" u 1:2:4 with pm3d\n";
+                
+                gpc << "load \"scriptC.gp\" \n";
+                std::cout << "set output \"" << drop_dir << "/cmapzoomed_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n";
+                gpc       << "set output \"" << drop_dir << "/cmapzoomed_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n ";
+                gpc << "set xrange [" << (fmax(0.0, dat_host.step*dat_host.tau * dat_host.beam_vel - 2e-6) + (dat_host.beam_start - 40) * dat_host.h)*scale << ":" << (fmax(0.0, dat_host.step*dat_host.tau * dat_host.beam_vel - 2e-6) + (dat_host.beam_start + 40) * dat_host.h)*scale << "]; set yrange [" << 3*dat_host.Nz*dat_host.hz/2*scale*1/12 << ":" << -dat_host.Nz*dat_host.hz/2*scale*0.12  <<"]\n";
+                gpc << "set title \"Al concentration in Al-Ti melt pool at t = " << std::setprecision(3) << dat_host.tim << "\"; ";
+                gpc << "splot \"data/dataT.txt\" u 1:2:4 with pm3d\n";
+
 
                 Gnuplot gps;
                 gpc << "load \"scriptState.gp\" \n";
