@@ -44,13 +44,13 @@ struct Data {
     double h, hz, tau;
     double tim, time_stop;
     int step, drop_rate;
-    double beam_radius, beam_vel, beam_start, beam_power, deltaX; // m\s
+    double beam_radius, beam_vel, beam_xstart, beam_ystart, beam_power, deltaX; // m\s
     
     double substrate_length, substrate_width, substrate_depth;
     double calc_length, calc_width, calc_depth;
 
     int Nx_calc, Nz_calc;
-    int Nx,Nz;
+    int Nx,Ny,Nz;
 
     double ti_density, al_density, al_dole, al_mass_dole;
 
@@ -199,12 +199,13 @@ __host__ void Data::init(double _temp, int _drop_rate){
     temp=_temp;
     h = 3e-6;
     hz = 3e-6;
-    tau = 1e-9;
+    tau = 1e-8;
     time_stop = 1e-6;
     drop_rate = (_drop_rate==-1) ? (int)(time_stop/tau) : _drop_rate;  // drop once at the end
     beam_vel = 1; // m\s
     beam_power = 1000;
-    beam_start = 200;
+    beam_xstart = 200;
+    beam_ystart = 1;
     beam_radius = 5e-5;
     deltaX = 0;
     
@@ -225,20 +226,21 @@ __host__ void Data::init(double _temp, int _drop_rate){
     Nz_calc = 10;
     Nx = 1200;
     Nz = 200;
+    Ny = 3;
 
     lambda_ti_0_s = -0.3;  lambda_ti_s = 14.6;
     lambda_ti_0_l = -6.7;  lambda_ti_l = 18.3;
 
     std::cout << "Allocating data maps and constants on host...\n"; 
-    al_h = (double*)(malloc(Nx*Nz*sizeof(double)));
-    ti_h = (double*)(malloc(Nx*Nz*sizeof(double)));
-    al_next_h = (double*)(malloc(Nx*Nz*sizeof(double)));
-    ti_next_h = (double*)(malloc(Nx*Nz*sizeof(double)));
-    heat_h = (double*)(malloc(Nx*Nz*sizeof(double)));
-    heat_next_h = (double*)(malloc(Nx*Nz*sizeof(double)));
-    state_field_h = (ST*)(malloc(Nx*Nz*sizeof(ST)));
-    D_h = (double*)(malloc(Nx*Nz*sizeof(double)));
-    heat_source_h = (double*)(malloc(Nx*sizeof(double)));
+    al_h = (double*)(malloc(Nx*Ny*Nz*sizeof(double)));
+    ti_h = (double*)(malloc(Nx*Ny*Nz*sizeof(double)));
+    al_next_h = (double*)(malloc(Nx*Ny*Nz*sizeof(double)));
+    ti_next_h = (double*)(malloc(Nx*Ny*Nz*sizeof(double)));
+    heat_h = (double*)(malloc(Nx*Ny*Nz*sizeof(double)));
+    heat_next_h = (double*)(malloc(Nx*Ny*Nz*sizeof(double)));
+    state_field_h = (ST*)(malloc(Nx*Ny*Nz*sizeof(ST)));
+    D_h = (double*)(malloc(Nx*Ny*Nz*sizeof(double)));
+    heat_source_h = (double*)(malloc(Nx*Ny*sizeof(double)));
     cts_Al_h = (constants*)(malloc(sizeof(constants)));
     cts_Ti_h = (constants*)(malloc(sizeof(constants)));
     std::cout << "Initializing constants on host\n";
@@ -268,46 +270,51 @@ __host__ void Data::init(double _temp, int _drop_rate){
     al_mass_loss = 0;
     ti_mass_loss = 0;
 
-    D = 1e-8;
+    D = 1e-7;
     al_0 = density/0.027 * al_mass_dole;
     ti_0 = density/0.048 * (1 - al_mass_dole);
     step = 0;
 
     std::cout << "Initializing data on host\n";
     for (int x = 0; x < Nx; x++){
-        for (int z = 0; z < Nz; z++){
-            al_h[x*Nz+z] = al_0;
-            ti_h[x*Nz+z] = ti_0;
-            al_next_h[x*Nz+z] = al_0;
-            ti_next_h[x*Nz+z] = ti_0;
-            state_field_h[x*Nz+z] = SOLID;
-            if (x==Nx-1) {state_field_h[x*Nz+z] = WALL;}
-            if (x==0)    {state_field_h[x*Nz+z] = WALL;}
-            heat_h[x*Nz+z] = 300;
-            heat_next_h[x*Nz+z] = 300;
+        for (int y = 0; y < Ny; y++) {
+            for (int z = 0; z < Nz; z++){
+                int index = y*Nx*Nz + x*Nz + z;
+                al_h[index] = al_0;
+                ti_h[index] = ti_0;
+                al_next_h[index] = al_0;
+                ti_next_h[index] = ti_0;
+                state_field_h[index] = SOLID;
+                if (x==Nx-1) {state_field_h[index] = WALL;}
+                if (x==0)    {state_field_h[index] = WALL;}
+                if (y==Ny-1) {state_field_h[index] = WALL;}
+                if (y==0)    {state_field_h[index] = WALL;}
+                if (z==Nz-1) {state_field_h[index] = WALL;}
+                if (z==0)    {state_field_h[index] = GAS ;}
+                heat_h[index] = 300;
+                heat_next_h[index] = 300;
+            }    
         }
-        state_field_h[x*Nz+0] = GAS;
-        state_field_h[x*Nz+Nz-1] = WALL;
     }
     std::cout << "### al_0 = " << al_0 << std::endl;
     std::cout << "Defining data maps and constants on device\n";
-    cudaMalloc((void**)&al_d, Nx*Nz*sizeof(double));       cudaMemcpy(al_d, al_h, Nx*Nz*sizeof(double), cudaMemcpyHostToDevice);
-    cudaMalloc((void**)&ti_d, Nx*Nz*sizeof(double));       cudaMemcpy(ti_d, ti_h, Nx*Nz*sizeof(double), cudaMemcpyHostToDevice);
-    cudaMalloc((void**)&al_next_d, Nx*Nz*sizeof(double));  cudaMemcpy(al_next_d, al_next_h, Nx*Nz*sizeof(double), cudaMemcpyHostToDevice);
-    cudaMalloc((void**)&ti_next_d, Nx*Nz*sizeof(double));  cudaMemcpy(ti_next_d, ti_next_h, Nx*Nz*sizeof(double), cudaMemcpyHostToDevice);
-    cudaMalloc((void**)&heat_d, Nx*Nz*sizeof(double));     cudaMemcpy(heat_d, heat_h, Nx*Nz*sizeof(double), cudaMemcpyHostToDevice);
-    cudaMalloc((void**)&heat_next_d, Nx*Nz*sizeof(double));cudaMemcpy(heat_next_d, heat_next_h, Nx*Nz*sizeof(double), cudaMemcpyHostToDevice);
-    cudaMalloc((void**)&D_d, Nx*Nz*sizeof(double));        cudaMemcpy(D_d, D_h, Nx*Nz*sizeof(double), cudaMemcpyHostToDevice);
-    cudaMalloc((void**)&state_field_d, Nx*Nz*sizeof(ST));  cudaMemcpy(state_field_d, state_field_h, Nx*Nz*sizeof(ST), cudaMemcpyHostToDevice);
-    cudaMalloc((void**)&heat_source_d, Nx*sizeof(double)); cudaMemcpy(heat_source_d, heat_source_h, Nx*sizeof(double), cudaMemcpyHostToDevice);
+    cudaMalloc((void**)&al_d, Nx*Ny*Nz*sizeof(double));       cudaMemcpy(al_d, al_h, Nx*Ny*Nz*sizeof(double), cudaMemcpyHostToDevice);
+    cudaMalloc((void**)&ti_d, Nx*Ny*Nz*sizeof(double));       cudaMemcpy(ti_d, ti_h, Nx*Ny*Nz*sizeof(double), cudaMemcpyHostToDevice);
+    cudaMalloc((void**)&al_next_d, Nx*Ny*Nz*sizeof(double));  cudaMemcpy(al_next_d, al_next_h, Nx*Ny*Nz*sizeof(double), cudaMemcpyHostToDevice);
+    cudaMalloc((void**)&ti_next_d, Nx*Ny*Nz*sizeof(double));  cudaMemcpy(ti_next_d, ti_next_h, Nx*Ny*Nz*sizeof(double), cudaMemcpyHostToDevice);
+    cudaMalloc((void**)&heat_d, Nx*Ny*Nz*sizeof(double));     cudaMemcpy(heat_d, heat_h, Nx*Ny*Nz*sizeof(double), cudaMemcpyHostToDevice);
+    cudaMalloc((void**)&heat_next_d, Nx*Ny*Nz*sizeof(double));cudaMemcpy(heat_next_d, heat_next_h, Nx*Ny*Nz*sizeof(double), cudaMemcpyHostToDevice);
+    cudaMalloc((void**)&D_d, Nx*Ny*Nz*sizeof(double));        cudaMemcpy(D_d, D_h, Nx*Ny*Nz*sizeof(double), cudaMemcpyHostToDevice);
+    cudaMalloc((void**)&state_field_d, Nx*Ny*Nz*sizeof(ST));  cudaMemcpy(state_field_d, state_field_h, Nx*Ny*Nz*sizeof(ST), cudaMemcpyHostToDevice);
+    cudaMalloc((void**)&heat_source_d, Nx*Ny*sizeof(double)); cudaMemcpy(heat_source_d, heat_source_h, Nx*Ny*sizeof(double), cudaMemcpyHostToDevice);
 }
 
 __host__ void Data::extract(){
-    cudaMemcpy(al_h, al_d, Nx*Nz*sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(ti_h, ti_d, Nx*Nz*sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(heat_h, heat_d, Nx*Nz*sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(heat_source_h, heat_source_d, Nx*sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(state_field_h, state_field_d, Nx*Nz*sizeof(ST), cudaMemcpyDeviceToHost);
+    cudaMemcpy(al_h, al_d, Nx*Ny*Nz*sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(ti_h, ti_d, Nx*Ny*Nz*sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(heat_h, heat_d, Nx*Ny*Nz*sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(heat_source_h, heat_source_d, Nx*Ny*sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(state_field_h, state_field_d, Nx*Ny*Nz*sizeof(ST), cudaMemcpyDeviceToHost);
 }
 
 __host__ void Data::clean(){
