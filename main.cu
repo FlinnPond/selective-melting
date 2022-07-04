@@ -12,11 +12,11 @@ __constant__ Data dat;
 // __device__ inline double Min(double A, double B){if(A<B) return A; else return B;}
 
 __global__ void CalcDiffusion(double* al, double* ti, double* al_next, double* ti_next, ST* state_field, double* heat) {
+    // printf("hey?");
     int x = blockIdx.x*blockDim.x + threadIdx.x;
     int y = blockIdx.y*blockDim.y + threadIdx.y;
     int z = blockIdx.z*blockDim.z + threadIdx.z;
     int center = y*dat.Nx*dat.Nz + x*dat.Nz + z;
-    printf("hey");
     if (x < dat.Nx && y<dat.Ny && z < dat.Nz && state_field[center] == FLUID) {
         int xp = y*dat.Nx*dat.Nz + (x+1)*dat.Nz + z;
         int xm = y*dat.Nx*dat.Nz + (x-1)*dat.Nz + z;
@@ -29,8 +29,8 @@ __global__ void CalcDiffusion(double* al, double* ti, double* al_next, double* t
         double ti_mass_loss = 0;
 
         if (state_field[zm] == GAS) {
-            al_mass_loss = Max(0.0,      al_dole  * activity_Al(heat[center], al_dole, dat.cts_Al_d) * mass_loss(heat[center], dat.cts_Al_d) * dat.tau);
-            ti_mass_loss = Max(0.0, (1 - al_dole) * activity_Ti(heat[center], al_dole, dat.cts_Ti_d) * mass_loss(heat[center], dat.cts_Ti_d) * dat.tau);
+            al_mass_loss = fmax(0.0,      al_dole  * activity_Al(heat[center], al_dole, dat.cts_Al_d) * mass_loss(heat[center], dat.cts_Al_d) * dat.tau);
+            ti_mass_loss = fmax(0.0, (1 - al_dole) * activity_Ti(heat[center], al_dole, dat.cts_Ti_d) * mass_loss(heat[center], dat.cts_Ti_d) * dat.tau);
         }
         double xmD = (state_field[xm] == FLUID) ? dat.D : 0;
         double xpD = (state_field[xp] == FLUID) ? dat.D : 0;
@@ -39,25 +39,17 @@ __global__ void CalcDiffusion(double* al, double* ti, double* al_next, double* t
         double zmD = (state_field[zm] == FLUID) ? dat.D : 0;
         double zpD = (state_field[zp] == FLUID) ? dat.D : 0;
 
-        al_next[center] = Max(0.0, al[center] + dat.tau * (
-            (xmD*(al[xm] - al[center]) + xpD*(al[xp] - al[center]))/(dat.h*dat.h) + 
-            (ymD*(al[ym] - al[center]) + ypD*(al[yp] - al[center]))/(dat.h*dat.h) + 
-            (zmD*(al[zm] - al[center]) + zpD*(al[zp] - al[center]))/(dat.h*dat.h)
+        al_next[center] = fmax(0.0, al[center] + dat.tau/(dat.h*dat.h) * (
+            xmD*(al[xm] - al[center]) + xpD*(al[xp] - al[center]) + 
+            ymD*(al[ym] - al[center]) + ypD*(al[yp] - al[center]) + 
+            zmD*(al[zm] - al[center]) + zpD*(al[zp] - al[center])
         ) - al_mass_loss / 0.027 / dat.h);
-
-        ti_next[center] = Max(0.0, ti[center] + dat.tau * (
-            (xmD*(ti[xm] - ti[center]) + xpD*(ti[xp] - ti[center]))/(dat.h*dat.h) + 
-            (ymD*(ti[ym] - ti[center]) + ypD*(ti[yp] - ti[center]))/(dat.h*dat.h) + 
-            (zmD*(ti[zm] - ti[center]) + zpD*(ti[zp] - ti[center]))/(dat.h*dat.h)
+        
+        ti_next[center] = fmax(0.0, ti[center] + dat.tau/(dat.h*dat.h) * (
+            xmD*(ti[xm] - ti[center]) + xpD*(ti[xp] - ti[center]) + 
+            ymD*(ti[ym] - ti[center]) + ypD*(ti[yp] - ti[center]) + 
+            zmD*(ti[zm] - ti[center]) + zpD*(ti[zp] - ti[center])
         ) - ti_mass_loss / 0.048 / dat.h);
-        // if (x == 200 && z == 1 && y == 1) {
-        //     printf("D: %e, al_next: %e, mass_loss: %e\n", dat.D, al_next[center], dat.tau * al_mass_loss / 0.048 / dat.h);
-        // }
-
-        // if (isnan(al_next[center])) {
-        //     printf("X:%i, z: %i, al_next: %e, loss: %e, mass_loss/mu/h: %e, mass_loss: %e, activity_Al: %e, al_dole: %e \n",x, z, al_next[center], al_mass_loss / 0.027 / dat.hz, al_mass_loss, mass_loss(heat[center], dat.cts_Al_d) * dat.tau, activity_Al(heat[center], al_dole, dat.cts_Al_d), al_dole);
-        //     al_next[center] = dat.al_0;
-        // }
     }
 }
 
@@ -133,6 +125,22 @@ __global__ void Move(double* al, double* ti, double* al_next, double* ti_next, S
     if (state_field[center] == FLUID) {al_next[center] = al[right]; ti_next[center] = ti[right];}
 }
 
+__host__ double CalcIntegralMassLoss(double* al, double* ti, ST* state_field, Data dat_host) {
+    double total_loss = 0;
+    int total = 0;
+    for (int x = 0; x < dat_host.Nx; x++){
+        for (int y = 0; y < dat_host.Ny; y++) {
+            for (int z = 0; z < dat_host.Nz; z++){
+                int center = y*dat_host.Nx*dat_host.Nz + x*dat_host.Nz + z;
+                if (state_field[center]==FLUID || state_field[center]==SOLID) {
+                    total_loss += al[center]/dat_host.al_0;
+                    total++;
+                }
+            }
+        }
+    }
+    return 1 - total_loss/total;
+}
 __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, int drop_rate, std::string drop_dir)
 {
     for (int temp=temp1; temp<temp2; temp+=temp_step)
@@ -142,15 +150,16 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
         dat_host.time_stop = time_stop;
         
         int threadsPerBlock = 8;
+        int threadsPerBlockY = 4;
         int blocksPerGridX = (dat_host.Nx + threadsPerBlock - 1) / threadsPerBlock;
         int blocksPerGridY = (dat_host.Ny + threadsPerBlock - 1) / threadsPerBlock;
         int blocksPerGridZ = (dat_host.Nz + threadsPerBlock - 1) / threadsPerBlock;
     
-        dim3 blockShape(threadsPerBlock, threadsPerBlock, threadsPerBlock);
+        dim3 blockShape(threadsPerBlock, threadsPerBlockY, threadsPerBlock);
         dim3 gridShape(blocksPerGridX, blocksPerGridY, blocksPerGridZ);
 
-        dim3 blockShapeSrc(threadsPerBlock, threadsPerBlock);
-        dim3 gridShapeSrc(blocksPerGridX, blocksPerGridY);
+        dim3 blockShapeXY(threadsPerBlock, threadsPerBlockY);
+        dim3 gridShapeXY(blocksPerGridX, blocksPerGridY);
 
         cudaMemcpyToSymbol(dat, &dat_host, sizeof(Data));
         std::cout << "copy data: " << cudaGetErrorString(cudaGetLastError()) << "\n";
@@ -159,7 +168,7 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
         {
             dat_host.step++;
             //std::cout << "temp " << temp << ", step " << dat_host.step << ": time = " << dat_host.tim << "; " << (dat_host.tim) / time_stop * 100 << "%" << std::endl;
-            CalcHeatSource<<<gridShapeSrc, blockShapeSrc>>>(dat_host.heat_source_d, dat_host.step);
+            CalcHeatSource<<<gridShapeXY, blockShapeXY>>>(dat_host.heat_source_d, dat_host.step);
             cudaDeviceSynchronize();
 
             CalcHeatConduct<<<gridShape, blockShape>>>(dat_host.heat_d, dat_host.heat_next_d, dat_host.heat_source_d, dat_host.al_d, dat_host.ti_d, dat_host.state_field_d);
@@ -169,9 +178,12 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
             UpdateState<<<gridShape, blockShape>>>(dat_host.state_field_d, dat_host.heat_d);
             cudaDeviceSynchronize();
             
-            CalcDiffusion<<<gridShape, blockShape>>>(dat_host.al_d, dat_host.ti_d, dat_host.al_next_d, dat_host.ti_next_d, dat_host.state_field_d, dat_host.heat_d);
+            CalcDiffusion<< <gridShape, blockShape>>>(dat_host.al_d, dat_host.ti_d, dat_host.al_next_d, dat_host.ti_next_d, dat_host.state_field_d, dat_host.heat_d);
             std::swap(dat_host.al_next_d, dat_host.al_d);
-            std::swap(dat_host.ti_next_d, dat_host.ti_d);            
+            std::swap(dat_host.ti_next_d, dat_host.ti_d);
+            cudaDeviceSynchronize();
+            // std::cout << "calc diff: " << cudaGetErrorString(cudaGetLastError()) << "\n";
+
             if (dat_host.step % dat_host.drop_rate == 0) {
                 cudaDeviceSynchronize();
                 dat_host.extract();
@@ -180,6 +192,7 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
                 double maxT = 0;
                 cudaDeviceSynchronize();
                 double scale = 1e6;
+                double time_scale = 1e6;
                 for (int x = 0; x < dat_host.Nx; x++)
                 {
                     for (int z = 0; z < dat_host.Nz; z++)
@@ -195,6 +208,7 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
                 float highest_temp = 6000;
                 float melt_temp = dat_host.cts_Ti_h->TEMP_MELT;
                 float melt_frac = melt_temp / highest_temp;
+                float mass_loss = 100 * CalcIntegralMassLoss(dat_host.al_h, dat_host.ti_h, dat_host.state_field_h, dat_host);
 
                 Gnuplot gp;
                 gp << "load \"scriptT.gp\" \n";
@@ -204,7 +218,7 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
                 // gp << "set xrange [0:" << dat_host.Nx * dat_host.h << "]; set yrange [" << 0 << ":* ]\n";
                 gp << "set palette defined (0 \"black\"," << melt_frac/2 << "\"blue\", " << melt_frac << "\"red\", " << melt_frac << "\"#00efc1\", " << (1+melt_frac)/2 << "\"#ffff46\", 1 \"grey90\") \n";
                 gp << "set cbrange [0:" << highest_temp << "] \n";
-                gp << "set title \"Al-Ti melt pool heat map at t = " << std::setprecision(3) << dat_host.tim << ", T_{max} = " << (int)maxT << "\"; ";
+                gp << "set title \"Al-Ti melt pool heat map at t = " << (int)(dat_host.step*dat_host.tau*time_scale) << "s^{-6}, T_{max} = " << (int)maxT << "\"; ";
                 gp << "splot \"data/dataT.txt\" u 1:2:3 with pm3d\n";
 
                 std::cout << "set output \"" << drop_dir << "/Tmapzoomed_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n";
@@ -213,7 +227,7 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
                 // gp << "set xrange [0:" << dat_host.Nx * dat_host.h << "]; set yrange [" << 0 << ":* ]\n";
                 gp << "set palette defined (0 \"black\"," << melt_frac/2 << "\"blue\", " << melt_frac << "\"red\", " << melt_frac << "\"#00efc1\", " << (1+melt_frac)/2 << "\"#ffff46\", 1 \"grey90\") \n";
                 gp << "set cbrange [0:" << highest_temp << "] \n";
-                gp << "set title \"Al-Ti melt pool heat map at t = " << std::setprecision(3) << dat_host.tim << ", T_{max} = " << (int)maxT << "\"; ";
+                gp << "set title \"Al-Ti melt pool heat map at t = " << (int)(dat_host.step*dat_host.tau*time_scale) << "s^{-6}, T_{max} = " << (int)maxT << "\"; ";
                 gp << "splot \"data/dataT.txt\" u 1:2:3 with pm3d\n";
 
 
@@ -222,13 +236,13 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
                 std::cout << "set output \"" << drop_dir << "/cmap_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n";
                 gpc       << "set output \"" << drop_dir << "/cmap_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n ";
                 gpc << "set xrange [0:" << dat_host.Nx * dat_host.h*scale << "]; set yrange [" << 3*dat_host.Nz*dat_host.hz/2*scale << ":" << -dat_host.Nz*dat_host.hz/2*scale  <<"]\n";
-                gpc << "set title \"Al concentration in Al-Ti melt pool at t = " << std::setprecision(3) << dat_host.tim << "\"; ";
+                gpc << "set title \"Al concentration in Al-Ti melt pool at t = " << (int)(dat_host.step*dat_host.tau*time_scale) << "s^{-6}, total aluminium mass loss: " <<std::fixed<<std::setprecision(3)<< mass_loss << "%\"; ";
                 gpc << "splot \"data/dataT.txt\" u 1:2:4 with pm3d\n";
                 
                 std::cout << "set output \"" << drop_dir << "/cmapzoomed_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n";
                 gpc       << "set output \"" << drop_dir << "/cmapzoomed_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n ";
                 gpc << "set xrange [" << (fmax(0.0, dat_host.step*dat_host.tau * dat_host.beam_vel - 2e-6) + (dat_host.beam_xstart - 40) * dat_host.h)*scale << ":" << (fmax(0.0, dat_host.step*dat_host.tau * dat_host.beam_vel - 2e-6) + (dat_host.beam_xstart + 40) * dat_host.h)*scale << "]; set yrange [" << 3*dat_host.Nz*dat_host.hz/2*scale*1/12 << ":" << -dat_host.Nz*dat_host.hz/2*scale*0.12  <<"]\n";
-                gpc << "set title \"Al concentration in Al-Ti melt pool at t = " << std::setprecision(3) << dat_host.tim << "\"; ";
+                gpc << "set title \"Al concentration in Al-Ti melt pool at t = " << (int)(dat_host.step*dat_host.tau*time_scale) << "s^{-6}\"; ";
                 gpc << "splot \"data/dataT.txt\" u 1:2:4 with pm3d\n";
 
 
@@ -237,7 +251,7 @@ __host__ void sim_temp(int temp1, int temp2, int temp_step, double time_stop, in
                 std::cout << "set output \"" << drop_dir << "/statemap_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n";
                 gpc       << "set output \"" << drop_dir << "/statemap_" << std::setfill('0') << std::setw(7) << (int)dat_host.step << ".png\"\n ";
                 gpc << "set xrange [0:" << dat_host.Nx * dat_host.h*scale << "]; set yrange [" << 3*dat_host.Nz*dat_host.hz/2*scale << ":" << -dat_host.Nz*dat_host.hz/2*scale  <<"]\n";
-                gpc << "set title \"State in Al-Ti melt pool at t = " << std::setprecision(3) << dat_host.tim << "\"; ";
+                gpc << "set title \"State in Al-Ti melt pool at t = " << (int)(dat_host.step*dat_host.tau*time_scale) << "s^{-6}\"; ";
                 gpc << "splot \"data/dataT.txt\" u 1:2:6 with pm3d\n";
             }
             dat_host.tim += dat_host.tau;
